@@ -1,11 +1,14 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from clerk_backend_api import Clerk  
+from clerk_backend_api import Clerk
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from src/.env
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
+load_dotenv()  # Fallback to current directory
 
 # Import routers
 from src.routes import challenge
