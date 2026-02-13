@@ -1,14 +1,14 @@
 import "react"
-import { useState, useEffect, useCallback } from "react" // Add useCallback
+import { useState, useEffect, useCallback } from "react"
 import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react"
 import { Outlet, Link, Navigate } from "react-router-dom"
 import { useApi } from "../utils/api"
+import { ThemeToggle } from "../components/ThemeToggle"
 
 export function Layout(){
     const [quota, setQuota] = useState(null)
     const { get } = useApi()
 
-    // Use useCallback to memoize the function
     const fetchQuota = useCallback(async () => {
         try {
             const quotaData = await get("challenges/quota")
@@ -16,10 +16,10 @@ export function Layout(){
         } catch (err) {
             console.error("Failed to fetch quota:", err)
         }
-    }, [get]) // Only recreate if get changes
+    }, [get])
 
     useEffect(() => {
-        let isMounted = true // Prevent state updates if unmounted
+        let isMounted = true
         
         const loadQuota = async () => {
             await fetchQuota()
@@ -27,28 +27,28 @@ export function Layout(){
         
         loadQuota()
         
-        // Optional: Refresh quota every 60 seconds
         const interval = setInterval(() => {
             if (isMounted) {
                 fetchQuota()
             }
-        }, 60000) // 60 seconds
+        }, 60000)
         
         return () => {
             isMounted = false
             clearInterval(interval)
         }
-    }, [fetchQuota]) // Only run when fetchQuota changes
+    }, [fetchQuota])
 
     const styles = {
         appLayout: {
             minHeight: '100vh',
             display: 'flex',
             flexDirection: 'column',
-            backgroundColor: '#f5f7fa'
+            backgroundColor: 'var(--bg-primary)',
+            transition: 'background-color 0.3s ease'
         },
         appHeader: {
-            backgroundColor: '#4a90e2',
+            backgroundColor: 'var(--accent-color)',
             color: 'white',
             padding: '0.75rem 2rem',
             boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
@@ -68,7 +68,8 @@ export function Layout(){
         h1: {
             margin: 0,
             fontSize: '1.5rem',
-            fontWeight: '600'
+            fontWeight: '600',
+            color: 'white'
         },
         credits: {
             display: 'flex',
@@ -78,7 +79,8 @@ export function Layout(){
             padding: '0.4rem 1rem',
             borderRadius: '30px',
             fontSize: '0.9rem',
-            fontWeight: '500'
+            fontWeight: '500',
+            color: 'white'
         },
         creditIcon: {
             fontSize: '1.1rem'
@@ -113,7 +115,8 @@ export function Layout(){
             maxWidth: '1200px',
             width: '100%',
             margin: '2rem auto',
-            padding: '0 2rem'
+            padding: '0 2rem',
+            backgroundColor: 'transparent'
         }
     }
 
@@ -139,7 +142,7 @@ export function Layout(){
                     <div style={styles.titleSection}>
                         <h1 style={styles.h1}>Code Challenge Generator</h1>
                         <SignedIn>
-                            {quota && ( // Only show if quota is loaded
+                            {quota && (
                                 <div style={{ ...styles.credits, ...getCreditStyle() }}>
                                     <span style={styles.creditIcon}>{getCreditIcon()}</span>
                                     <span>
@@ -152,6 +155,7 @@ export function Layout(){
                     </div>
                     <nav style={styles.nav}>
                         <SignedIn>
+                            <ThemeToggle />
                             <Link 
                                 to="/" 
                                 style={styles.link}
