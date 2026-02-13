@@ -12,6 +12,7 @@ load_dotenv()  # Fallback to current directory
 
 # Import routers
 from src.routes import challenge
+from src.routes import stats
 
 # Clerk SDK
 clerk_sdk = Clerk(bearer_auth=os.getenv("CLERK_SECRET_KEY"))
@@ -33,6 +34,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(challenge.router, prefix="/api/challenges", tags=["Challenges"])
+app.include_router(stats.router, prefix="/api", tags=["Statistics"]) 
 
 @app.get("/")
 async def root():

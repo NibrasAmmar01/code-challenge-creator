@@ -9,7 +9,6 @@ export function Layout(){
     const { get } = useApi()
 
     useEffect(() => {
-        // Define fetchQuota inside useEffect
         const fetchQuota = async () => {
             try {
                 const quotaData = await get("challenges/quota")
@@ -20,7 +19,7 @@ export function Layout(){
         }
         
         fetchQuota()
-    }, [get]) // Only depend on 'get' which is stable
+    }, [get])
 
     const styles = {
         appLayout: {
@@ -147,6 +146,14 @@ export function Layout(){
                                 onMouseLeave={(e) => e.target.style.borderBottom = '2px solid transparent'}
                             >
                                 History
+                            </Link>
+                            <Link 
+                                to="/stats" 
+                                style={styles.link}
+                                onMouseEnter={(e) => e.target.style.borderBottom = '2px solid white'}
+                                onMouseLeave={(e) => e.target.style.borderBottom = '2px solid transparent'}
+                            >
+                                Statistics
                             </Link>
                             <UserButton />
                         </SignedIn>
