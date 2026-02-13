@@ -1,9 +1,10 @@
 import { useAuth } from "@clerk/clerk-react";
+import { useCallback, useMemo } from "react";
 
 export const useApi = () => {
     const { getToken } = useAuth();
 
-    const makeRequest = async (endpoint, options = {}) => {
+    const makeRequest = useCallback(async (endpoint, options = {}) => {
         try {
             const token = await getToken();
             
@@ -39,32 +40,38 @@ export const useApi = () => {
             console.error("API request failed:", error);
             throw error;
         }
-    };
+    }, [getToken]);
 
-    // Convenience methods
-    const get = (endpoint, options = {}) => {
+    const get = useCallback((endpoint, options = {}) => {
         return makeRequest(endpoint, { method: "GET", ...options });
-    };
+    }, [makeRequest]);
 
-    const post = (endpoint, data, options = {}) => {
-        return makeRequest(endpoint, {
-            method: "POST",
+    const post = useCallback((endpoint, data, options = {}) => {
+        return makeRequest(endpoint, { 
+            method: "POST", 
             body: JSON.stringify(data),
-            ...options
+            ...options 
         });
-    };
+    }, [makeRequest]);
 
-    const put = (endpoint, data, options = {}) => {
-        return makeRequest(endpoint, {
-            method: "PUT",
+    const put = useCallback((endpoint, data, options = {}) => {
+        return makeRequest(endpoint, { 
+            method: "PUT", 
             body: JSON.stringify(data),
-            ...options
+            ...options 
         });
-    };
+    }, [makeRequest]);
 
-    const del = (endpoint, options = {}) => {
+    const del = useCallback((endpoint, options = {}) => {
         return makeRequest(endpoint, { method: "DELETE", ...options });
-    };
+    }, [makeRequest]);
 
-    return { makeRequest, get, post, put, delete: del };
+    // Memoize the returned object
+    return useMemo(() => ({ 
+        makeRequest, 
+        get, 
+        post, 
+        put, 
+        delete: del 
+    }), [makeRequest, get, post, put, del]);
 };

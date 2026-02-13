@@ -1,5 +1,5 @@
 import "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react" // Add useCallback
 import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react"
 import { Outlet, Link, Navigate } from "react-router-dom"
 import { useApi } from "../utils/api"
@@ -8,18 +8,37 @@ export function Layout(){
     const [quota, setQuota] = useState(null)
     const { get } = useApi()
 
+    // Use useCallback to memoize the function
+    const fetchQuota = useCallback(async () => {
+        try {
+            const quotaData = await get("challenges/quota")
+            setQuota(quotaData)
+        } catch (err) {
+            console.error("Failed to fetch quota:", err)
+        }
+    }, [get]) // Only recreate if get changes
+
     useEffect(() => {
-        const fetchQuota = async () => {
-            try {
-                const quotaData = await get("challenges/quota")
-                setQuota(quotaData)
-            } catch (err) {
-                console.error("Failed to fetch quota:", err)
-            }
+        let isMounted = true // Prevent state updates if unmounted
+        
+        const loadQuota = async () => {
+            await fetchQuota()
         }
         
-        fetchQuota()
-    }, [get])
+        loadQuota()
+        
+        // Optional: Refresh quota every 60 seconds
+        const interval = setInterval(() => {
+            if (isMounted) {
+                fetchQuota()
+            }
+        }, 60000) // 60 seconds
+        
+        return () => {
+            isMounted = false
+            clearInterval(interval)
+        }
+    }, [fetchQuota]) // Only run when fetchQuota changes
 
     const styles = {
         appLayout: {
@@ -120,13 +139,15 @@ export function Layout(){
                     <div style={styles.titleSection}>
                         <h1 style={styles.h1}>Code Challenge Generator</h1>
                         <SignedIn>
-                            <div style={{ ...styles.credits, ...getCreditStyle() }}>
-                                <span style={styles.creditIcon}>{getCreditIcon()}</span>
-                                <span>
-                                    <span style={styles.creditNumber}>{quota?.quota_remaining || 0}</span>
-                                    / {quota?.total_quota || 50} remaining
-                                </span>
-                            </div>
+                            {quota && ( // Only show if quota is loaded
+                                <div style={{ ...styles.credits, ...getCreditStyle() }}>
+                                    <span style={styles.creditIcon}>{getCreditIcon()}</span>
+                                    <span>
+                                        <span style={styles.creditNumber}>{quota.quota_remaining}</span>
+                                        / {quota.total_quota || 50} remaining
+                                    </span>
+                                </div>
+                            )}
                         </SignedIn>
                     </div>
                     <nav style={styles.nav}>
@@ -153,7 +174,7 @@ export function Layout(){
                                 onMouseEnter={(e) => e.target.style.borderBottom = '2px solid white'}
                                 onMouseLeave={(e) => e.target.style.borderBottom = '2px solid transparent'}
                             >
-                                Statistics
+                                Stats
                             </Link>
                             <UserButton />
                         </SignedIn>
