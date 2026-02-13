@@ -4,10 +4,12 @@ import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react"
 import { Outlet, Link, Navigate } from "react-router-dom"
 import { useApi } from "../utils/api"
 import { ThemeToggle } from "../components/ThemeToggle"
+import { useTheme } from "../context/ThemeContext"
 
 export function Layout(){
     const [quota, setQuota] = useState(null)
     const { get } = useApi()
+    const { theme } = useTheme()
 
     const fetchQuota = useCallback(async () => {
         try {
@@ -39,6 +41,13 @@ export function Layout(){
         }
     }, [fetchQuota])
 
+    // Get header background based on theme
+    const getHeaderBackground = () => {
+        return theme === 'light' 
+            ? 'linear-gradient(135deg, #4f46e5, #6366f1)' // Brighter gradient for light mode
+            : 'linear-gradient(135deg, #312e81, #4338ca)'; // Darker gradient for dark mode
+    }
+
     const styles = {
         appLayout: {
             minHeight: '100vh',
@@ -48,10 +57,15 @@ export function Layout(){
             transition: 'background-color 0.3s ease'
         },
         appHeader: {
-            backgroundColor: 'var(--accent-color)',
+            background: getHeaderBackground(),
             color: 'white',
             padding: '0.75rem 2rem',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            boxShadow: theme === 'light' 
+                ? '0 4px 6px -1px rgba(79, 70, 229, 0.2)' 
+                : '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
+            borderBottom: theme === 'light' 
+                ? '1px solid rgba(255, 255, 255, 0.1)'
+                : '1px solid rgba(255, 255, 255, 0.05)'
         },
         headerContent: {
             maxWidth: '1200px',
@@ -69,18 +83,27 @@ export function Layout(){
             margin: 0,
             fontSize: '1.5rem',
             fontWeight: '600',
-            color: 'white'
+            color: 'white',
+            textShadow: theme === 'light'
+                ? '0 1px 2px rgba(0, 0, 0, 0.1)'
+                : '0 2px 4px rgba(0, 0, 0, 0.3)'
         },
         credits: {
             display: 'flex',
             alignItems: 'center',
             gap: '0.5rem',
-            backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            backgroundColor: theme === 'light'
+                ? 'rgba(255, 255, 255, 0.2)'
+                : 'rgba(0, 0, 0, 0.3)',
             padding: '0.4rem 1rem',
             borderRadius: '30px',
             fontSize: '0.9rem',
             fontWeight: '500',
-            color: 'white'
+            color: 'white',
+            backdropFilter: 'blur(8px)',
+            border: theme === 'light'
+                ? '1px solid rgba(255, 255, 255, 0.3)'
+                : '1px solid rgba(255, 255, 255, 0.1)'
         },
         creditIcon: {
             fontSize: '1.1rem'
@@ -90,12 +113,22 @@ export function Layout(){
             marginRight: '0.25rem'
         },
         creditWarning: {
-            backgroundColor: 'rgba(255, 193, 7, 0.2)',
-            color: '#ffc107'
+            backgroundColor: theme === 'light'
+                ? 'rgba(245, 158, 11, 0.2)'
+                : 'rgba(245, 158, 11, 0.3)',
+            color: '#fbbf24',
+            border: theme === 'light'
+                ? '1px solid rgba(245, 158, 11, 0.3)'
+                : '1px solid rgba(245, 158, 11, 0.4)'
         },
         creditDanger: {
-            backgroundColor: 'rgba(220, 53, 69, 0.2)',
-            color: '#dc3545'
+            backgroundColor: theme === 'light'
+                ? 'rgba(239, 68, 68, 0.2)'
+                : 'rgba(239, 68, 68, 0.3)',
+            color: '#f87171',
+            border: theme === 'light'
+                ? '1px solid rgba(239, 68, 68, 0.3)'
+                : '1px solid rgba(239, 68, 68, 0.4)'
         },
         nav: {
             display: 'flex',
@@ -108,7 +141,15 @@ export function Layout(){
             fontWeight: '500',
             padding: '0.5rem 0',
             borderBottom: '2px solid transparent',
-            transition: 'border-color 0.3s'
+            transition: 'all 0.3s',
+            opacity: 0.9,
+            textShadow: theme === 'light'
+                ? '0 1px 2px rgba(0, 0, 0, 0.1)'
+                : '0 2px 4px rgba(0, 0, 0, 0.3)'
+        },
+        linkHover: {
+            opacity: 1,
+            borderBottomColor: 'white'
         },
         main: {
             flex: 1,
@@ -159,28 +200,58 @@ export function Layout(){
                             <Link 
                                 to="/" 
                                 style={styles.link}
-                                onMouseEnter={(e) => e.target.style.borderBottom = '2px solid white'}
-                                onMouseLeave={(e) => e.target.style.borderBottom = '2px solid transparent'}
+                                onMouseEnter={(e) => {
+                                    e.target.style.opacity = '1'
+                                    e.target.style.borderBottom = '2px solid white'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.opacity = '0.9'
+                                    e.target.style.borderBottom = '2px solid transparent'
+                                }}
                             >
                                 Generate
                             </Link>
                             <Link 
                                 to="/history" 
                                 style={styles.link}
-                                onMouseEnter={(e) => e.target.style.borderBottom = '2px solid white'}
-                                onMouseLeave={(e) => e.target.style.borderBottom = '2px solid transparent'}
+                                onMouseEnter={(e) => {
+                                    e.target.style.opacity = '1'
+                                    e.target.style.borderBottom = '2px solid white'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.opacity = '0.9'
+                                    e.target.style.borderBottom = '2px solid transparent'
+                                }}
                             >
                                 History
                             </Link>
                             <Link 
                                 to="/stats" 
                                 style={styles.link}
-                                onMouseEnter={(e) => e.target.style.borderBottom = '2px solid white'}
-                                onMouseLeave={(e) => e.target.style.borderBottom = '2px solid transparent'}
+                                onMouseEnter={(e) => {
+                                    e.target.style.opacity = '1'
+                                    e.target.style.borderBottom = '2px solid white'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.opacity = '0.9'
+                                    e.target.style.borderBottom = '2px solid transparent'
+                                }}
                             >
                                 Stats
                             </Link>
-                            <UserButton />
+                            <UserButton 
+                                appearance={{
+                                    elements: {
+                                        userButtonAvatarBox: {
+                                            width: '32px',
+                                            height: '32px',
+                                            border: theme === 'light'
+                                                ? '2px solid rgba(255, 255, 255, 0.5)'
+                                                : '2px solid rgba(255, 255, 255, 0.2)'
+                                        }
+                                    }
+                                }}
+                            />
                         </SignedIn>
                     </nav>
                 </div>

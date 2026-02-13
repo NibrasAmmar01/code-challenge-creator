@@ -16,7 +16,6 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
         setSelectedOption(index)
         setShouldShowExplanation(true)
         
-        // Submit answer to backend for validation
         if (onAnswerSubmit) {
             setIsSubmitting(true)
             try {
@@ -33,19 +32,31 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
         }
     }
 
+    const getDifficultyColor = () => {
+        switch(challenge.difficulty) {
+            case 'easy': return 'var(--success-500)';
+            case 'medium': return 'var(--warning-500)';
+            case 'hard': return 'var(--error-500)';
+            default: return 'var(--primary-500)';
+        }
+    }
+
     const getOptionStyle = (index) => {
         const baseStyle = {
-            padding: '1rem',
-            margin: '0.5rem 0',
-            borderRadius: '8px',
-            border: '2px solid #e0e0e0',
+            padding: '1.25rem',
+            margin: '0.75rem 0',
+            borderRadius: '0.75rem',
+            border: '2px solid var(--border-color)',
             cursor: selectedOption === null && !isSubmitting ? 'pointer' : 'default',
-            transition: 'all 0.3s',
-            backgroundColor: 'white',
+            transition: 'all 0.2s',
+            backgroundColor: 'var(--card-bg)',
+            color: 'var(--text-primary)',
             position: 'relative',
             display: 'flex',
             alignItems: 'center',
-            gap: '0.75rem'
+            gap: '1rem',
+            fontSize: '1rem',
+            lineHeight: '1.5'
         }
 
         if (selectedOption === null) {
@@ -55,9 +66,9 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
         if (index === challenge.correct_answer_id) {
             return {
                 ...baseStyle,
-                borderColor: '#2ecc71',
-                backgroundColor: '#e8f8f5',
-                color: '#27ae60',
+                borderColor: 'var(--success-500)',
+                backgroundColor: 'var(--success-50)',
+                color: 'var(--success-700)',
                 fontWeight: '500'
             }
         }
@@ -65,117 +76,191 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
         if (selectedOption === index && index !== challenge.correct_answer_id) {
             return {
                 ...baseStyle,
-                borderColor: '#e74c3c',
-                backgroundColor: '#fdeded',
-                color: '#c0392b'
+                borderColor: 'var(--error-500)',
+                backgroundColor: 'var(--error-50)',
+                color: 'var(--error-700)'
             }
         }
 
         return {
             ...baseStyle,
-            opacity: 0.6,
-            borderColor: '#e0e0e0',
-            backgroundColor: '#f9f9f9'
+            opacity: 0.5,
+            borderColor: 'var(--border-color)',
+            backgroundColor: 'var(--bg-tertiary)'
         }
     }
 
-    // Styles
     const styles = {
         container: {
             maxWidth: '800px',
             margin: '0 auto',
+            background: 'var(--card-bg)',
+            borderRadius: '1rem',
             padding: '2rem',
-            background: 'white',
-            borderRadius: '12px',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+            boxShadow: 'var(--card-shadow)',
+            border: '1px solid var(--card-border)'
+        },
+        header: {
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '1.5rem',
+            paddingBottom: '1rem',
+            borderBottom: '2px solid var(--border-color)'
         },
         difficulty: {
-            color: '#7f8c8d',
-            fontSize: '0.9rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '0.5rem 1rem',
+            borderRadius: '2rem',
+            fontSize: '0.85rem',
+            fontWeight: '600',
             textTransform: 'uppercase',
-            letterSpacing: '1px',
-            marginBottom: '0.5rem'
+            letterSpacing: '0.5px',
+            background: `${getDifficultyColor()}15`,
+            color: getDifficultyColor(),
+            border: `1px solid ${getDifficultyColor()}`
+        },
+        topic: {
+            color: 'var(--text-muted)',
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
         },
         title: {
-            fontSize: '1.5rem',
-            fontWeight: '600',
-            color: '#2c3e50',
-            marginBottom: '1.5rem',
-            lineHeight: '1.4'
+            fontSize: '1.75rem',
+            fontWeight: '700',
+            color: 'var(--text-primary)',
+            marginBottom: '1rem',
+            lineHeight: '1.3'
+        },
+        question: {
+            fontSize: '1.1rem',
+            color: 'var(--text-secondary)',
+            marginBottom: '2rem',
+            padding: '1.5rem',
+            background: 'var(--bg-tertiary)',
+            borderRadius: '0.75rem',
+            borderLeft: '4px solid var(--primary-500)'
         },
         optionsContainer: {
             display: 'flex',
             flexDirection: 'column',
             gap: '0.5rem',
-            marginBottom: '1.5rem'
+            marginBottom: '2rem'
         },
         optionLetter: {
-            display: 'inline-block',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            backgroundColor: '#4a90e2',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            background: 'var(--primary-500)',
             color: 'white',
-            textAlign: 'center',
-            lineHeight: '24px',
-            fontSize: '0.85rem',
-            fontWeight: 'bold',
-            marginRight: '0.75rem'
+            fontSize: '1rem',
+            fontWeight: '600'
         },
         explanation: {
             marginTop: '2rem',
-            padding: '1.5rem',
-            backgroundColor: '#f8f9fa',
-            borderRadius: '8px',
-            borderLeft: '4px solid #4a90e2'
+            padding: '2rem',
+            background: 'var(--bg-tertiary)',
+            borderRadius: '1rem',
+            borderLeft: '4px solid var(--primary-500)'
         },
         explanationTitle: {
-            color: '#2c3e50',
-            fontSize: '1.1rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            color: 'var(--text-primary)',
+            fontSize: '1.25rem',
             fontWeight: '600',
-            marginBottom: '0.75rem'
+            marginBottom: '1rem'
         },
         explanationText: {
-            color: '#34495e',
-            lineHeight: '1.6',
-            fontSize: '1rem'
+            color: 'var(--text-secondary)',
+            lineHeight: '1.8',
+            fontSize: '1rem',
+            marginBottom: '1.5rem'
+        },
+        complexity: {
+            display: 'flex',
+            gap: '2rem',
+            padding: '1rem',
+            background: 'var(--card-bg)',
+            borderRadius: '0.75rem',
+            border: '1px solid var(--border-color)'
+        },
+        complexityItem: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.25rem'
+        },
+        complexityLabel: {
+            fontSize: '0.85rem',
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+        },
+        complexityValue: {
+            fontSize: '1.1rem',
+            fontWeight: '600',
+            color: 'var(--text-primary)'
         },
         correctIcon: {
-            color: '#2ecc71',
+            color: 'var(--success-500)',
             fontWeight: 'bold',
-            marginLeft: 'auto'
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem'
         },
         incorrectIcon: {
-            color: '#e74c3c',
+            color: 'var(--error-500)',
             fontWeight: 'bold',
-            marginLeft: 'auto'
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem'
         }
     }
 
-    // Hover handlers - removed unused index parameter
     const handleOptionHover = (e) => {
         if (selectedOption !== null || isSubmitting) return
-        e.currentTarget.style.borderColor = '#4a90e2'
-        e.currentTarget.style.backgroundColor = '#f0f7ff'
+        e.currentTarget.style.borderColor = 'var(--primary-500)'
+        e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)'
         e.currentTarget.style.transform = 'translateX(4px)'
     }
 
     const handleOptionLeave = (e) => {
         if (selectedOption !== null || isSubmitting) return
-        e.currentTarget.style.borderColor = '#e0e0e0'
-        e.currentTarget.style.backgroundColor = 'white'
+        e.currentTarget.style.borderColor = 'var(--border-color)'
+        e.currentTarget.style.backgroundColor = 'var(--card-bg)'
         e.currentTarget.style.transform = 'none'
     }
 
     const optionLetters = ['A', 'B', 'C', 'D']
 
     return (
-        <div style={styles.container}>
-            <p style={styles.difficulty}>
-                <strong>Difficulty:</strong> {challenge.difficulty?.charAt(0).toUpperCase() + challenge.difficulty?.slice(1) || 'N/A'}
-            </p>
+        <div style={styles.container} className="animate-slide-in">
+            <div style={styles.header}>
+                <span style={styles.difficulty}>
+                    {challenge.difficulty === 'easy' && '🌱 '}
+                    {challenge.difficulty === 'medium' && '📚 '}
+                    {challenge.difficulty === 'hard' && '🚀 '}
+                    {challenge.difficulty?.toUpperCase()}
+                </span>
+                <span style={styles.topic}>
+                    <span>📌</span> {challenge.topic}
+                </span>
+            </div>
             
             <h3 style={styles.title}>{challenge.title}</h3>
+            
+            <div style={styles.question}>
+                {challenge.question}
+            </div>
             
             <div style={styles.optionsContainer}>
                 {options.map((option, index) => (
@@ -190,11 +275,15 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
                         <span style={{ flex: 1 }}>{option}</span>
                         
                         {selectedOption !== null && index === challenge.correct_answer_id && (
-                            <span style={styles.correctIcon}>✓ Correct</span>
+                            <span style={styles.correctIcon}>
+                                ✓ <span style={{ fontSize: '0.9rem' }}>Correct</span>
+                            </span>
                         )}
                         
                         {selectedOption === index && index !== challenge.correct_answer_id && (
-                            <span style={styles.incorrectIcon}>✗ Incorrect</span>
+                            <span style={styles.incorrectIcon}>
+                                ✗ <span style={{ fontSize: '0.9rem' }}>Incorrect</span>
+                            </span>
                         )}
                     </div>
                 ))}
@@ -202,34 +291,43 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
 
             {shouldShowExplanation && selectedOption !== null && (
                 <div style={styles.explanation}>
-                    <h4 style={styles.explanationTitle}>📚 Explanation</h4>
+                    <div style={styles.explanationTitle}>
+                        <span>📚</span> Explanation
+                    </div>
                     <p style={styles.explanationText}>{challenge.explanation}</p>
                     
-                    {challenge.time_complexity && (
-                        <p style={{ marginTop: '1rem', color: '#7f8c8d' }}>
-                            <strong>⏱️ Time Complexity:</strong> {challenge.time_complexity}
-                        </p>
-                    )}
-                    
-                    {challenge.space_complexity && (
-                        <p style={{ color: '#7f8c8d' }}>
-                            <strong>💾 Space Complexity:</strong> {challenge.space_complexity}
-                        </p>
+                    {(challenge.time_complexity || challenge.space_complexity) && (
+                        <div style={styles.complexity}>
+                            {challenge.time_complexity && challenge.time_complexity !== 'N/A' && (
+                                <div style={styles.complexityItem}>
+                                    <span style={styles.complexityLabel}>⏱️ Time</span>
+                                    <span style={styles.complexityValue}>{challenge.time_complexity}</span>
+                                </div>
+                            )}
+                            {challenge.space_complexity && challenge.space_complexity !== 'N/A' && (
+                                <div style={styles.complexityItem}>
+                                    <span style={styles.complexityLabel}>💾 Space</span>
+                                    <span style={styles.complexityValue}>{challenge.space_complexity}</span>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             )}
 
             {selectedOption !== null && selectedOption === challenge.correct_answer_id && (
                 <div style={{
-                    marginTop: '1rem',
-                    padding: '0.75rem',
-                    backgroundColor: '#d4edda',
-                    color: '#155724',
-                    borderRadius: '6px',
+                    marginTop: '1.5rem',
+                    padding: '1rem',
+                    background: 'var(--success-50)',
+                    color: 'var(--success-700)',
+                    borderRadius: '0.75rem',
                     textAlign: 'center',
-                    fontWeight: '500'
+                    fontWeight: '600',
+                    border: '1px solid var(--success-500)',
+                    animation: 'slideIn 0.3s ease-out'
                 }}>
-                    🎉 Correct! Great job!
+                    🎉 Correct! Great job! Keep up the good work!
                 </div>
             )}
         </div>
