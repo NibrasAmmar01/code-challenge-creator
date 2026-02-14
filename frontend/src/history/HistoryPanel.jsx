@@ -10,17 +10,42 @@ export function HistoryPanel(){
     const [total, setTotal] = useState(0)
     const [selectedChallenge, setSelectedChallenge] = useState(null)
     
+    // Filter states
+    const [filterDifficulty, setFilterDifficulty] = useState("")
+    const [searchTerm, setSearchTerm] = useState("")
+    const [sortBy, setSortBy] = useState("desc") // desc = newest first, asc = oldest first
+    
     const { get } = useApi()
     const limit = 10
 
-    const fetchHistory = async (pageNum = page) => {
+    const fetchHistory = async (pageNum = 0) => {
         setIsLoading(true)
         setError(null)
         
         try {
-            const response = await get(`challenges/my-history?limit=${limit}&offset=${pageNum * limit}`)
+            // Build query params
+            const params = new URLSearchParams()
+            params.append('limit', limit)
+            params.append('offset', pageNum * limit)
+            params.append('sort', sortBy)
+            
+            // Only add filters if they have values
+            if (filterDifficulty) {
+                params.append('difficulty', filterDifficulty)
+            }
+            
+            if (searchTerm.trim()) {
+                params.append('search', searchTerm.trim())
+            }
+            
+            console.log("Fetching with params:", params.toString()) // Debug log
+            
+            const response = await get(`challenges/my-history?${params.toString()}`)
+            console.log("Response:", response) // Debug log
+            
             setHistory(response.challenges || [])
             setTotal(response.total || 0)
+            setPage(pageNum)
         } catch (err) {
             console.error("Failed to fetch history:", err)
             setError(err.message || "Failed to load challenge history")
@@ -29,9 +54,30 @@ export function HistoryPanel(){
         }
     }
 
+    // Initial fetch
     useEffect(() => {
         fetchHistory(0)
-    }, [])
+    }, []) // Empty dependency array = run once on mount
+
+    // Fetch when filters change
+    useEffect(() => {
+        // Reset to first page when filters change
+        fetchHistory(0)
+    }, [filterDifficulty, sortBy]) // Removed searchTerm from here - we'll handle it separately
+
+    // Debounced search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (page !== 0) {
+                // Reset to first page on search
+                fetchHistory(0)
+            } else {
+                fetchHistory(0)
+            }
+        }, 500)
+
+        return () => clearTimeout(timer)
+    }, [searchTerm])
 
     const handlePageChange = (newPage) => {
         setPage(newPage)
@@ -42,7 +88,45 @@ export function HistoryPanel(){
         setSelectedChallenge(selectedChallenge?.id === challenge.id ? null : challenge)
     }
 
+    const handleDifficultyChange = (e) => {
+        setFilterDifficulty(e.target.value)
+    }
+
+    const handleSortChange = (e) => {
+        setSortBy(e.target.value)
+    }
+
+    const handleSearchChange = (e) => {
+        setSearchTerm(e.target.value)
+    }
+
+    const clearFilters = () => {
+        setFilterDifficulty("")
+        setSearchTerm("")
+        setSortBy("desc")
+        // Fetch will be triggered by useEffect
+    }
+
     const totalPages = Math.ceil(total / limit)
+
+    const getDifficultyStats = () => {
+        const stats = { easy: 0, medium: 0, hard: 0 }
+        history.forEach(ch => {
+            if (stats[ch.difficulty] !== undefined) {
+                stats[ch.difficulty]++
+            }
+        })
+        return stats
+    }
+
+    const difficultyStats = getDifficultyStats()
+
+    // Count active filters
+    const activeFilterCount = [
+        filterDifficulty !== "",
+        searchTerm.trim() !== "",
+        sortBy !== "desc"
+    ].filter(Boolean).length
 
     const styles = {
         container: {
@@ -57,7 +141,9 @@ export function HistoryPanel(){
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: '2rem'
+            marginBottom: '1.5rem',
+            flexWrap: 'wrap',
+            gap: '1rem'
         },
         title: {
             fontSize: '1.8rem',
@@ -71,6 +157,96 @@ export function HistoryPanel(){
             background: '#f8f9fa',
             padding: '0.5rem 1rem',
             borderRadius: '20px'
+        },
+        filterBar: {
+            background: '#f8f9fa',
+            borderRadius: '8px',
+            padding: '1.5rem',
+            marginBottom: '2rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            alignItems: 'flex-end'
+        },
+        filterGroup: {
+            flex: 1,
+            minWidth: '200px'
+        },
+        filterLabel: {
+            display: 'block',
+            fontSize: '0.85rem',
+            fontWeight: '500',
+            color: '#666',
+            marginBottom: '0.5rem',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+        },
+        filterSelect: {
+            width: '100%',
+            padding: '0.75rem',
+            borderRadius: '6px',
+            border: '1px solid #e0e0e0',
+            background: 'white',
+            fontSize: '0.95rem',
+            color: '#333',
+            cursor: 'pointer',
+            outline: 'none',
+            transition: 'border-color 0.2s'
+        },
+        searchInput: {
+            width: '100%',
+            padding: '0.75rem',
+            borderRadius: '6px',
+            border: '1px solid #e0e0e0',
+            background: 'white',
+            fontSize: '0.95rem',
+            color: '#333',
+            outline: 'none',
+            transition: 'border-color 0.2s'
+        },
+        clearFiltersButton: {
+            padding: '0.75rem 1.5rem',
+            background: 'transparent',
+            border: '1px solid #e0e0e0',
+            borderRadius: '6px',
+            color: '#666',
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            whiteSpace: 'nowrap',
+            height: '42px'
+        },
+        statsRow: {
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: '1rem',
+            marginBottom: '2rem'
+        },
+        statCard: {
+            background: '#f8f9fa',
+            borderRadius: '8px',
+            padding: '1rem',
+            textAlign: 'center'
+        },
+        statValue: {
+            fontSize: '2rem',
+            fontWeight: '700',
+            color: '#333',
+            lineHeight: '1.2'
+        },
+        statLabel: {
+            fontSize: '0.9rem',
+            color: '#666',
+            marginTop: '0.25rem'
+        },
+        statEasy: {
+            color: '#28a745'
+        },
+        statMedium: {
+            color: '#fd7e14'
+        },
+        statHard: {
+            color: '#dc3545'
         },
         loadingContainer: {
             display: 'flex',
@@ -149,7 +325,9 @@ export function HistoryPanel(){
         cardMeta: {
             display: 'flex',
             gap: '1rem',
-            alignItems: 'center'
+            alignItems: 'center',
+            marginTop: '0.5rem',
+            flexWrap: 'wrap'
         },
         difficulty: {
             padding: '0.25rem 0.75rem',
@@ -171,7 +349,17 @@ export function HistoryPanel(){
         },
         date: {
             color: '#999',
-            fontSize: '0.85rem'
+            fontSize: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem'
+        },
+        topic: {
+            color: '#666',
+            fontSize: '0.85rem',
+            background: '#e9ecef',
+            padding: '0.25rem 0.75rem',
+            borderRadius: '20px'
         },
         expandIcon: {
             color: '#4a90e2',
@@ -187,7 +375,8 @@ export function HistoryPanel(){
             justifyContent: 'center',
             alignItems: 'center',
             gap: '0.5rem',
-            marginTop: '2rem'
+            marginTop: '2rem',
+            flexWrap: 'wrap'
         },
         pageButton: {
             padding: '0.5rem 1rem',
@@ -195,7 +384,8 @@ export function HistoryPanel(){
             background: 'white',
             borderRadius: '6px',
             cursor: 'pointer',
-            transition: 'all 0.3s'
+            transition: 'all 0.3s',
+            minWidth: '40px'
         },
         pageButtonActive: {
             background: '#4a90e2',
@@ -205,6 +395,14 @@ export function HistoryPanel(){
         pageButtonDisabled: {
             opacity: 0.5,
             cursor: 'not-allowed'
+        },
+        activeFilterCount: {
+            background: '#4a90e2',
+            color: 'white',
+            borderRadius: '12px',
+            padding: '0.25rem 0.75rem',
+            fontSize: '0.85rem',
+            marginLeft: '0.5rem'
         }
     }
 
@@ -216,7 +414,7 @@ export function HistoryPanel(){
         }
     `
 
-    if (isLoading) {
+    if (isLoading && page === 0) {
         return (
             <>
                 <style>{spinnerKeyframes}</style>
@@ -254,17 +452,121 @@ export function HistoryPanel(){
             <div style={styles.container}>
                 <div style={styles.header}>
                     <h2 style={styles.title}>Challenge History</h2>
-                    {total > 0 && (
-                        <span style={styles.stats}>
-                            {total} total challenge{total !== 1 ? 's' : ''}
-                        </span>
+                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                        {total > 0 && (
+                            <span style={styles.stats}>
+                                {total} total challenge{total !== 1 ? 's' : ''}
+                            </span>
+                        )}
+                        {activeFilterCount > 0 && (
+                            <span style={styles.activeFilterCount}>
+                                {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''} active
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                {/* Filter Bar */}
+                <div style={styles.filterBar}>
+                    <div style={styles.filterGroup}>
+                        <label style={styles.filterLabel}>Search</label>
+                        <input
+                            type="text"
+                            placeholder="Search by title or topic..."
+                            value={searchTerm}
+                            onChange={handleSearchChange}
+                            style={styles.searchInput}
+                        />
+                    </div>
+
+                    <div style={styles.filterGroup}>
+                        <label style={styles.filterLabel}>Difficulty</label>
+                        <select
+                            value={filterDifficulty}
+                            onChange={handleDifficultyChange}
+                            style={styles.filterSelect}
+                        >
+                            <option value="">All Difficulties</option>
+                            <option value="easy">🌱 Easy</option>
+                            <option value="medium">📚 Medium</option>
+                            <option value="hard">🚀 Hard</option>
+                        </select>
+                    </div>
+
+                    <div style={styles.filterGroup}>
+                        <label style={styles.filterLabel}>Sort By</label>
+                        <select
+                            value={sortBy}
+                            onChange={handleSortChange}
+                            style={styles.filterSelect}
+                        >
+                            <option value="desc">Newest First</option>
+                            <option value="asc">Oldest First</option>
+                        </select>
+                    </div>
+
+                    {activeFilterCount > 0 && (
+                        <button
+                            style={styles.clearFiltersButton}
+                            onClick={clearFilters}
+                            onMouseEnter={(e) => {
+                                e.target.style.background = '#f0f0f0'
+                                e.target.style.borderColor = '#ccc'
+                            }}
+                            onMouseLeave={(e) => {
+                                e.target.style.background = 'transparent'
+                                e.target.style.borderColor = '#e0e0e0'
+                            }}
+                        >
+                            Clear Filters
+                        </button>
                     )}
                 </div>
 
-                {history.length === 0 ? (
+                {/* Statistics Cards */}
+                {history.length > 0 && (
+                    <div style={styles.statsRow}>
+                        <div style={styles.statCard}>
+                            <div style={styles.statValue}>{history.length}</div>
+                            <div style={styles.statLabel}>Showing</div>
+                        </div>
+                        {difficultyStats.easy > 0 && (
+                            <div style={styles.statCard}>
+                                <div style={{...styles.statValue, ...styles.statEasy}}>
+                                    {difficultyStats.easy}
+                                </div>
+                                <div style={styles.statLabel}>Easy</div>
+                            </div>
+                        )}
+                        {difficultyStats.medium > 0 && (
+                            <div style={styles.statCard}>
+                                <div style={{...styles.statValue, ...styles.statMedium}}>
+                                    {difficultyStats.medium}
+                                </div>
+                                <div style={styles.statLabel}>Medium</div>
+                            </div>
+                        )}
+                        {difficultyStats.hard > 0 && (
+                            <div style={styles.statCard}>
+                                <div style={{...styles.statValue, ...styles.statHard}}>
+                                    {difficultyStats.hard}
+                                </div>
+                                <div style={styles.statLabel}>Hard</div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {history.length === 0 && !isLoading ? (
                     <div style={styles.emptyState}>
-                        <p style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>🎯 No challenges yet</p>
-                        <p style={{ color: '#999' }}>Generate your first coding challenge to get started!</p>
+                        <p style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>
+                            {searchTerm || filterDifficulty ? '🔍 No matches found' : '🎯 No challenges yet'}
+                        </p>
+                        <p style={{ color: '#999' }}>
+                            {searchTerm || filterDifficulty 
+                                ? 'Try adjusting your filters' 
+                                : 'Generate your first coding challenge to get started!'}
+                        </p>
                     </div>
                 ) : (
                     <>
@@ -279,8 +581,8 @@ export function HistoryPanel(){
                                     onClick={() => handleChallengeClick(challenge)}
                                     onMouseEnter={(e) => {
                                         if (selectedChallenge?.id !== challenge.id) {
-                                            e.currentTarget.style.borderColor = styles.historyCardHover.borderColor
-                                            e.currentTarget.style.background = styles.historyCardHover.background
+                                            e.currentTarget.style.borderColor = '#4a90e2'
+                                            e.currentTarget.style.background = '#f0f7ff'
                                         }
                                     }}
                                     onMouseLeave={(e) => {
@@ -299,15 +601,19 @@ export function HistoryPanel(){
                                                     ...(challenge.difficulty === 'easy' ? styles.easy :
                                                         challenge.difficulty === 'medium' ? styles.medium : styles.hard)
                                                 }}>
+                                                    {challenge.difficulty === 'easy' && '🌱 '}
+                                                    {challenge.difficulty === 'medium' && '📚 '}
+                                                    {challenge.difficulty === 'hard' && '🚀 '}
                                                     {challenge.difficulty?.charAt(0).toUpperCase() + challenge.difficulty?.slice(1)}
                                                 </span>
+                                                <span style={styles.topic}>
+                                                    📌 {challenge.topic}
+                                                </span>
                                                 <span style={styles.date}>
-                                                    {new Date(challenge.date_created).toLocaleDateString('en-US', {
+                                                    📅 {new Date(challenge.date_created).toLocaleDateString('en-US', {
                                                         year: 'numeric',
                                                         month: 'short',
-                                                        day: 'numeric',
-                                                        hour: '2-digit',
-                                                        minute: '2-digit'
+                                                        day: 'numeric'
                                                     })}
                                                 </span>
                                             </div>
@@ -339,7 +645,7 @@ export function HistoryPanel(){
                                     onClick={() => handlePageChange(page - 1)}
                                     disabled={page === 0}
                                 >
-                                    Previous
+                                    ←
                                 </button>
                                 
                                 {[...Array(totalPages)].map((_, i) => (
@@ -363,7 +669,7 @@ export function HistoryPanel(){
                                     onClick={() => handlePageChange(page + 1)}
                                     disabled={page === totalPages - 1}
                                 >
-                                    Next
+                                    →
                                 </button>
                             </div>
                         )}

@@ -204,20 +204,53 @@ async def my_history(
     fastapi_request: Request,
     db: Session = Depends(get_db),
     limit: int = 10,
-    offset: int = 0
+    offset: int = 0,
+    difficulty: Optional[str] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = "desc"  # 'asc' or 'desc'
 ):
     """
-    Get user's challenge history
+    Get user's challenge history with filtering options
     
     - **limit**: Number of challenges to return (default: 10)
     - **offset**: Number of challenges to skip (default: 0)
+    - **difficulty**: Filter by difficulty (easy, medium, hard)
+    - **search**: Search in title and topic
+    - **sort**: Sort order by date ('asc' for oldest first, 'desc' for newest first)
     """
     try:
         user_details = authenticate_and_get_user_details(fastapi_request)
         user_id = user_details.get("user_id")
         logger.info(f"Fetching history for user {user_id}")
 
-        challenges = get_user_challenges(db, user_id, limit=limit, offset=offset)
+        from ..database.models import Challenge
+        
+        # Build query
+        query = db.query(Challenge).filter(Challenge.created_by == user_id)
+        
+        # Apply difficulty filter
+        if difficulty and difficulty != "all":
+            query = query.filter(Challenge.difficulty == difficulty)
+        
+        # Apply search filter
+        if search and search.strip():
+            search_term = f"%{search.strip()}%"
+            query = query.filter(
+                (Challenge.title.ilike(search_term)) |
+                (Challenge.topic.ilike(search_term))
+            )
+        
+        # Get total count before pagination
+        total = query.count()
+        
+        # Apply sorting
+        if sort == "asc":
+            query = query.order_by(Challenge.date_created.asc())
+        else:
+            query = query.order_by(Challenge.date_created.desc())
+        
+        # Apply pagination
+        challenges = query.offset(offset).limit(limit).all()
         
         # Format challenges for response
         formatted_challenges = []
@@ -232,7 +265,7 @@ async def my_history(
                 "title": challenge.title,
                 "question": challenge.question,
                 "options": options,
-                "correct_answer_id": challenge.correct_answer_id,  # FIXED: Use correct_answer_id
+                "correct_answer_id": challenge.correct_answer_id,
                 "explanation": challenge.explanation,
                 "difficulty": challenge.difficulty,
                 "topic": challenge.topic,
@@ -243,7 +276,9 @@ async def my_history(
         
         return {
             "user_id": user_id,
-            "total": len(formatted_challenges),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
             "challenges": formatted_challenges
         }
         
@@ -253,8 +288,7 @@ async def my_history(
         logger.error(f"Error fetching history: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error fetching history: {str(e)}")
-
-
+    
 @router.get("/quota", response_model=QuotaResponse)
 async def get_quota(
     fastapi_request: Request,
