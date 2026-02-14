@@ -266,6 +266,67 @@ def get_fallback_challenge(topic: str,
     }
 
 
+
+def generate_hint(question: str, options: list, correct_answer: int, 
+                  explanation: str, difficulty: str, hint_level: int = 1) -> str:
+    """
+    Generate a hint for a multiple choice question
+    hint_level: 1 = subtle hint, 2 = more specific, 3 = detailed guidance
+    """
+    
+    hint_level_descriptions = {
+        1: "a subtle hint that gently points in the right direction without revealing too much",
+        2: "a more specific hint that narrows down the options and explains the key concept",
+        3: "a detailed hint that explains the approach and why certain options are wrong, but don't directly state which is correct"
+    }
+    
+    system_prompt = f"""
+You are an expert coding instructor helping students learn by providing helpful hints.
+Your hints should be educational and guide thinking without directly giving away the answer.
+Make hints appropriate for {difficulty} difficulty level.
+"""
+    
+    # Format options with letters
+    formatted_options = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(options)])
+    
+    user_prompt = f"""
+Question: {question}
+
+Options:
+{formatted_options}
+
+I need {hint_level_descriptions[hint_level]}
+
+The correct answer is option {chr(65+correct_answer)} but DO NOT reveal this directly.
+Instead, provide a helpful hint that guides the student to figure it out themselves.
+
+Requirements:
+- Keep the hint to 1-3 sentences
+- Be encouraging and helpful
+- Focus on the key concept or approach
+- For level 3, you can explain why certain approaches are wrong
+- DO NOT explicitly say which option is correct
+"""
+    
+    try:
+        hint = call_ollama(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.3,  # Lower temperature for more focused hints
+            max_tokens=200
+        )
+        return hint.strip()
+    except Exception as e:
+        print(f"Error generating hint: {e}")
+        # Fallback hints based on level
+        fallback_hints = {
+            1: "Think about the time and space complexity trade-offs in this problem.",
+            2: "Consider which data structure would be most efficient for this scenario.",
+            3: "Look at the edge cases and constraints - the optimal solution often handles them elegantly."
+        }
+        return fallback_hints[hint_level]
+
+
 # ============= ASYNC SUPPORT ===================
 async def generate_challenge_async(topic: str, difficulty: str):
     loop = asyncio.get_event_loop()

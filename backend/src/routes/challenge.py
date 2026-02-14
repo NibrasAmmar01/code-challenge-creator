@@ -390,6 +390,66 @@ async def validate_answer(
         raise HTTPException(status_code=500, detail=f"Error validating answer: {str(e)}")
 
 
+@router.post("/get-hint")
+async def get_hint(
+    fastapi_request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a hint for a challenge
+    """
+    try:
+        body = await fastapi_request.json()
+        challenge_id = body.get("challenge_id")
+        hint_level = body.get("hint_level", 1)  # 1 = subtle hint, 2 = more specific, 3 = almost answer
+        
+        user_details = authenticate_and_get_user_details(fastapi_request)
+        user_id = user_details.get("user_id")
+        
+        # Get the challenge
+        from ..database.models import Challenge
+        challenge = db.query(Challenge).filter(
+            Challenge.id == challenge_id,
+            Challenge.created_by == user_id
+        ).first()
+        
+        if not challenge:
+            raise HTTPException(status_code=404, detail="Challenge not found")
+        
+        # Check quota for hint usage (optional - you can decide if hints cost quota)
+        quota = get_challenge_quota(db, user_id)
+        if not quota or quota.quota_remaining <= 0:
+            raise HTTPException(status_code=429, detail="No quota remaining for hints")
+        
+        # Generate hint using AI
+        from ..ai_generator import generate_hint
+        hint = generate_hint(
+            question=challenge.question,
+            options=json.loads(challenge.options),
+            correct_answer=challenge.correct_answer_id,
+            explanation=challenge.explanation,
+            difficulty=challenge.difficulty,
+            hint_level=hint_level
+        )
+        
+        # Optional: Decrement quota for hint usage
+        # quota.quota_remaining -= 1
+        # db.commit()
+        
+        return {
+            "hint": hint,
+            "hint_level": hint_level,
+            "challenge_id": challenge_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating hint: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error generating hint: {str(e)}")
+
+
 @router.post("/explain-code")
 async def explain_code(
     fastapi_request: Request

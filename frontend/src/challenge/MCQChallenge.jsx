@@ -1,10 +1,20 @@
 import "react"
 import { useState } from "react"
+import { useApi } from "../utils/api"
 
 export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmit }) {
     const [selectedOption, setSelectedOption] = useState(null)
     const [shouldShowExplanation, setShouldShowExplanation] = useState(showExplanation)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    
+    // New state for hints
+    const [showHints, setShowHints] = useState(false)
+    const [hints, setHints] = useState([])
+    const [isLoadingHint, setIsLoadingHint] = useState(false)
+    const [hintError, setHintError] = useState(null)
+    const [hintLevel, setHintLevel] = useState(1)
+    
+    const { post } = useApi()
 
     const options = typeof challenge.options === "string"
         ? JSON.parse(challenge.options)
@@ -29,6 +39,32 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
             } finally {
                 setIsSubmitting(false)
             }
+        }
+    }
+
+    // New function to request a hint
+    const requestHint = async () => {
+        if (hints.length >= 3) {
+            return // Max hints reached
+        }
+        
+        setIsLoadingHint(true)
+        setHintError(null)
+        
+        try {
+            const response = await post("challenges/get-hint", {
+                challenge_id: challenge.id,
+                hint_level: hintLevel
+            })
+            
+            setHints([...hints, response.hint])
+            setHintLevel(prev => prev + 1)
+            setShowHints(true)
+        } catch (err) {
+            console.error("Failed to get hint:", err)
+            setHintError(err.message || "Failed to load hint. Please try again.")
+        } finally {
+            setIsLoadingHint(false)
         }
     }
 
@@ -144,6 +180,85 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
             borderRadius: '0.75rem',
             borderLeft: '4px solid var(--primary-500)'
         },
+        // New hint section styles
+        hintSection: {
+            marginBottom: '2rem',
+            padding: '1rem',
+            background: 'var(--bg-secondary)',
+            borderRadius: '0.75rem',
+            border: '1px dashed var(--primary-500)'
+        },
+        hintButton: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.75rem 1.5rem',
+            background: 'transparent',
+            border: '2px solid var(--primary-500)',
+            borderRadius: '2rem',
+            color: 'var(--primary-500)',
+            fontWeight: '600',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            marginBottom: '1rem'
+        },
+        hintButtonDisabled: {
+            opacity: 0.5,
+            cursor: 'not-allowed',
+            borderColor: 'var(--text-muted)',
+            color: 'var(--text-muted)'
+        },
+        hintContainer: {
+            marginTop: '1rem'
+        },
+        hintItem: {
+            padding: '1rem',
+            marginBottom: '0.75rem',
+            background: 'var(--card-bg)',
+            borderRadius: '0.5rem',
+            borderLeft: '4px solid var(--primary-500)',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+            animation: 'slideIn 0.3s ease-out'
+        },
+        hintHeader: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            marginBottom: '0.5rem',
+            color: 'var(--primary-600)',
+            fontWeight: '600',
+            fontSize: '0.9rem'
+        },
+        hintText: {
+            color: 'var(--text-secondary)',
+            lineHeight: '1.6',
+            fontSize: '0.95rem'
+        },
+        hintLevel: {
+            fontSize: '0.8rem',
+            padding: '0.2rem 0.5rem',
+            background: 'var(--primary-100)',
+            borderRadius: '1rem',
+            color: 'var(--primary-700)',
+            marginLeft: 'auto'
+        },
+        hintError: {
+            padding: '0.75rem',
+            background: 'var(--error-50)',
+            border: '1px solid var(--error-500)',
+            borderRadius: '0.5rem',
+            color: 'var(--error-700)',
+            fontSize: '0.9rem',
+            marginTop: '0.5rem'
+        },
+        hintSpinner: {
+            width: '16px',
+            height: '16px',
+            border: '2px solid var(--primary-200)',
+            borderTop: '2px solid var(--primary-600)',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+        },
         optionsContainer: {
             display: 'flex',
             flexDirection: 'column',
@@ -242,6 +357,8 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
 
     const optionLetters = ['A', 'B', 'C', 'D']
 
+    const hintLevelNames = ['Subtle Hint', 'Specific Hint', 'Detailed Hint']
+
     return (
         <div style={styles.container} className="animate-slide-in">
             <div style={styles.header}>
@@ -261,6 +378,57 @@ export function MCQChallenge({ challenge, showExplanation = false, onAnswerSubmi
             <div style={styles.question}>
                 {challenge.question}
             </div>
+
+            {/* New Hint Section */}
+            {selectedOption === null && (
+                <div style={styles.hintSection}>
+                    <button
+                        onClick={requestHint}
+                        disabled={isLoadingHint || hints.length >= 3}
+                        style={{
+                            ...styles.hintButton,
+                            ...((isLoadingHint || hints.length >= 3) && styles.hintButtonDisabled)
+                        }}
+                    >
+                        {isLoadingHint ? (
+                            <>
+                                <span style={styles.hintSpinner}></span>
+                                Generating hint...
+                            </>
+                        ) : hints.length >= 3 ? (
+                            <>
+                                <span>🔒</span>
+                                No more hints available
+                            </>
+                        ) : (
+                            <>
+                                <span>💡</span>
+                                Get {hintLevelNames[hintLevel - 1]}
+                            </>
+                        )}
+                    </button>
+
+                    {hintError && (
+                        <div style={styles.hintError}>
+                            ❌ {hintError}
+                        </div>
+                    )}
+
+                    {hints.length > 0 && (
+                        <div style={styles.hintContainer}>
+                            {hints.map((hint, index) => (
+                                <div key={index} style={styles.hintItem}>
+                                    <div style={styles.hintHeader}>
+                                        <span>💡 Hint {index + 1}</span>
+                                        <span style={styles.hintLevel}>{hintLevelNames[index]}</span>
+                                    </div>
+                                    <div style={styles.hintText}>{hint}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
             
             <div style={styles.optionsContainer}>
                 {options.map((option, index) => (
