@@ -10,6 +10,10 @@ export function HistoryPanel(){
     const [total, setTotal] = useState(0)
     const [selectedChallenge, setSelectedChallenge] = useState(null)
     
+    // New state for export
+    const [isExporting, setIsExporting] = useState(false)
+    const [exportFormat, setExportFormat] = useState('json') // 'json' or 'csv'
+    
     // Filter states
     const [filterDifficulty, setFilterDifficulty] = useState("")
     const [searchTerm, setSearchTerm] = useState("")
@@ -51,6 +55,190 @@ export function HistoryPanel(){
             setError(err.message || "Failed to load challenge history")
         } finally {
             setIsLoading(false)
+        }
+    }
+
+    // NEW: Export functions
+    const exportToJSON = () => {
+        const exportData = {
+            exported_at: new Date().toISOString(),
+            total_challenges: total,
+            filters: {
+                difficulty: filterDifficulty || 'all',
+                search: searchTerm || 'none',
+                sort: sortBy
+            },
+            challenges: history.map(ch => ({
+                id: ch.id,
+                title: ch.title,
+                difficulty: ch.difficulty,
+                topic: ch.topic,
+                question: ch.question,
+                options: ch.options,
+                correct_answer_id: ch.correct_answer_id,
+                explanation: ch.explanation,
+                time_complexity: ch.time_complexity,
+                space_complexity: ch.space_complexity,
+                date_created: ch.date_created
+            }))
+        }
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `challenge-history-${new Date().toISOString().split('T')[0]}.json`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }
+
+    const exportToCSV = () => {
+        // Define CSV headers
+        const headers = ['ID', 'Title', 'Difficulty', 'Topic', 'Date Created', 'Time Complexity', 'Space Complexity']
+        
+        // Convert challenges to CSV rows
+        const rows = history.map(ch => [
+            ch.id,
+            `"${ch.title.replace(/"/g, '""')}"`, // Escape quotes in title
+            ch.difficulty,
+            `"${ch.topic.replace(/"/g, '""')}"`, // Escape quotes in topic
+            new Date(ch.date_created).toLocaleDateString(),
+            ch.time_complexity || 'N/A',
+            ch.space_complexity || 'N/A'
+        ])
+        
+        // Combine headers and rows
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(row => row.join(','))
+        ].join('\n')
+        
+        const blob = new Blob([csvContent], { type: 'text/csv' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `challenge-history-${new Date().toISOString().split('T')[0]}.csv`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }
+
+    const exportToPDF = async () => {
+        setIsExporting(true)
+        try {
+            // This is a simplified version - for real PDF generation, 
+            // you'd want to use a library like jsPDF or react-pdf
+            const printWindow = window.open('', '_blank')
+            if (!printWindow) {
+                alert('Please allow pop-ups to print')
+                return
+            }
+            
+            printWindow.document.write(`
+                <html>
+                    <head>
+                        <title>Challenge History Export</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; margin: 2rem; }
+                            h1 { color: #333; }
+                            .header { display: flex; justify-content: space-between; margin-bottom: 2rem; }
+                            .filters { background: #f5f5f5; padding: 1rem; border-radius: 8px; margin-bottom: 2rem; }
+                            table { width: 100%; border-collapse: collapse; }
+                            th { background: #4a90e2; color: white; padding: 0.75rem; text-align: left; }
+                            td { padding: 0.75rem; border-bottom: 1px solid #ddd; }
+                            tr:nth-child(even) { background: #f9f9f9; }
+                            .challenge-details { margin-top: 1rem; padding: 1rem; background: #f0f7ff; border-radius: 8px; }
+                            .badge { 
+                                padding: 0.25rem 0.75rem; 
+                                border-radius: 20px; 
+                                font-size: 0.85rem;
+                                display: inline-block;
+                            }
+                            .easy { background: #d4edda; color: #155724; }
+                            .medium { background: #fff3cd; color: #856404; }
+                            .hard { background: #f8d7da; color: #721c24; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h1>Challenge History Export</h1>
+                            <p>Exported: ${new Date().toLocaleString()}</p>
+                        </div>
+                        
+                        <div class="filters">
+                            <h3>Applied Filters:</h3>
+                            <p>Difficulty: ${filterDifficulty || 'All'}</p>
+                            <p>Search: ${searchTerm || 'None'}</p>
+                            <p>Sort: ${sortBy === 'desc' ? 'Newest First' : 'Oldest First'}</p>
+                            <p>Total Challenges: ${total}</p>
+                        </div>
+                        
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Difficulty</th>
+                                    <th>Topic</th>
+                                    <th>Date</th>
+                                    <th>Time Complexity</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${history.map(ch => `
+                                    <tr>
+                                        <td>${ch.title}</td>
+                                        <td><span class="badge ${ch.difficulty}">${ch.difficulty}</span></td>
+                                        <td>${ch.topic}</td>
+                                        <td>${new Date(ch.date_created).toLocaleDateString()}</td>
+                                        <td>${ch.time_complexity || 'N/A'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                        
+                        <p style="margin-top: 2rem; text-align: center; color: #666;">
+                            Generated by Code Challenge Generator
+                        </p>
+                    </body>
+                </html>
+            `)
+            
+            printWindow.document.close()
+            
+            // Wait for content to load then print
+            setTimeout(() => {
+                printWindow.print()
+            }, 500)
+            
+        } catch (err) {
+            console.error("Failed to generate PDF:", err)
+            setError("Failed to generate PDF")
+        } finally {
+            setIsExporting(false)
+        }
+    }
+
+    const handleExport = () => {
+        if (history.length === 0) {
+            alert('No challenges to export')
+            return
+        }
+        
+        switch(exportFormat) {
+            case 'json':
+                exportToJSON()
+                break
+            case 'csv':
+                exportToCSV()
+                break
+            case 'pdf':
+                exportToPDF()
+                break
+            default:
+                exportToJSON()
         }
     }
 
@@ -151,12 +339,50 @@ export function HistoryPanel(){
             color: '#333',
             margin: 0
         },
+        headerActions: {
+            display: 'flex',
+            gap: '1rem',
+            alignItems: 'center'
+        },
         stats: {
             color: '#666',
             fontSize: '0.95rem',
             background: '#f8f9fa',
             padding: '0.5rem 1rem',
             borderRadius: '20px'
+        },
+        // NEW: Export button styles
+        exportContainer: {
+            display: 'flex',
+            gap: '0.5rem',
+            alignItems: 'center'
+        },
+        exportSelect: {
+            padding: '0.5rem',
+            borderRadius: '6px',
+            border: '1px solid #e0e0e0',
+            background: 'white',
+            fontSize: '0.9rem',
+            color: '#333',
+            cursor: 'pointer'
+        },
+        exportButton: {
+            padding: '0.5rem 1rem',
+            background: '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '0.9rem',
+            cursor: 'pointer',
+            transition: 'background 0.2s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+        },
+        exportButtonDisabled: {
+            background: '#6c757d',
+            cursor: 'not-allowed',
+            opacity: 0.5
         },
         filterBar: {
             background: '#f8f9fa',
@@ -452,12 +678,49 @@ export function HistoryPanel(){
             <div style={styles.container}>
                 <div style={styles.header}>
                     <h2 style={styles.title}>Challenge History</h2>
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div style={styles.headerActions}>
                         {total > 0 && (
                             <span style={styles.stats}>
                                 {total} total challenge{total !== 1 ? 's' : ''}
                             </span>
                         )}
+                        
+                        {/* NEW: Export controls */}
+                        {history.length > 0 && (
+                            <div style={styles.exportContainer}>
+                                <select
+                                    value={exportFormat}
+                                    onChange={(e) => setExportFormat(e.target.value)}
+                                    style={styles.exportSelect}
+                                    disabled={isExporting}
+                                >
+                                    <option value="json">JSON</option>
+                                    <option value="csv">CSV</option>
+                                    <option value="pdf">PDF</option>
+                                </select>
+                                <button
+                                    onClick={handleExport}
+                                    style={{
+                                        ...styles.exportButton,
+                                        ...(isExporting ? styles.exportButtonDisabled : {})
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (!isExporting) {
+                                            e.target.style.background = '#218838'
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (!isExporting) {
+                                            e.target.style.background = '#28a745'
+                                        }
+                                    }}
+                                    disabled={isExporting}
+                                >
+                                    {isExporting ? 'Exporting...' : '📥 Export'}
+                                </button>
+                            </div>
+                        )}
+                        
                         {activeFilterCount > 0 && (
                             <span style={styles.activeFilterCount}>
                                 {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''} active
