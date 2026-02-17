@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { MCQChallenge } from "../challenge/MCQChallenge"
 import { useApi } from "../utils/api"
 
@@ -14,6 +14,9 @@ export function HistoryPanel(){
     const [isExporting, setIsExporting] = useState(false)
     const [exportFormat, setExportFormat] = useState('json') // 'json' or 'csv'
     
+    // New state for share feedback
+    const [shareFeedback, setShareFeedback] = useState({ show: false, message: '', challengeId: null })
+    
     // Filter states
     const [filterDifficulty, setFilterDifficulty] = useState("")
     const [searchTerm, setSearchTerm] = useState("")
@@ -22,7 +25,8 @@ export function HistoryPanel(){
     const { get } = useApi()
     const limit = 10
 
-    const fetchHistory = async (pageNum = 0) => {
+    // Memoize fetchHistory to prevent unnecessary re-renders
+    const fetchHistory = useCallback(async (pageNum = 0) => {
         setIsLoading(true)
         setError(null)
         
@@ -42,10 +46,10 @@ export function HistoryPanel(){
                 params.append('search', searchTerm.trim())
             }
             
-            console.log("Fetching with params:", params.toString()) // Debug log
+            console.log("Fetching with params:", params.toString())
             
             const response = await get(`challenges/my-history?${params.toString()}`)
-            console.log("Response:", response) // Debug log
+            console.log("Response:", response)
             
             setHistory(response.challenges || [])
             setTotal(response.total || 0)
@@ -56,9 +60,54 @@ export function HistoryPanel(){
         } finally {
             setIsLoading(false)
         }
+    }, [filterDifficulty, searchTerm, sortBy, get, limit])
+
+    // Share function
+    const handleShareChallenge = async (challenge, e) => {
+        e.stopPropagation() // Prevent card expansion
+        
+        try {
+            // Get share link from backend
+            const result = await get(`challenges/challenge/${challenge.id}/share`)
+            
+            // Copy to clipboard
+            await navigator.clipboard.writeText(result.share_url)
+            
+            // Show success feedback
+            setShareFeedback({
+                show: true,
+                message: '✓ Link copied to clipboard!',
+                challengeId: challenge.id
+            })
+            
+            // Hide feedback after 2 seconds
+            setTimeout(() => {
+                setShareFeedback({ show: false, message: '', challengeId: null })
+            }, 2000)
+            
+        } catch (err) {
+            console.error("Failed to share challenge:", err)
+            
+            // Fallback: try to copy URL manually
+            const fallbackUrl = `${window.location.origin}/challenge/${challenge.id}`
+            try {
+                await navigator.clipboard.writeText(fallbackUrl)
+                setShareFeedback({
+                    show: true,
+                    message: '✓ Link copied to clipboard!',
+                    challengeId: challenge.id
+                })
+                setTimeout(() => {
+                    setShareFeedback({ show: false, message: '', challengeId: null })
+                }, 2000)
+            } catch {
+                // Use '_' to indicate intentionally unused parameter
+                alert('Could not copy to clipboard. Here\'s the link:\n' + fallbackUrl)
+            }
+        }
     }
 
-    // NEW: Export functions
+    // Export functions
     const exportToJSON = () => {
         const exportData = {
             exported_at: new Date().toISOString(),
@@ -101,9 +150,9 @@ export function HistoryPanel(){
         // Convert challenges to CSV rows
         const rows = history.map(ch => [
             ch.id,
-            `"${ch.title.replace(/"/g, '""')}"`, // Escape quotes in title
+            `"${ch.title.replace(/"/g, '""')}"`,
             ch.difficulty,
-            `"${ch.topic.replace(/"/g, '""')}"`, // Escape quotes in topic
+            `"${ch.topic.replace(/"/g, '""')}"`,
             new Date(ch.date_created).toLocaleDateString(),
             ch.time_complexity || 'N/A',
             ch.space_complexity || 'N/A'
@@ -129,8 +178,6 @@ export function HistoryPanel(){
     const exportToPDF = async () => {
         setIsExporting(true)
         try {
-            // This is a simplified version - for real PDF generation, 
-            // you'd want to use a library like jsPDF or react-pdf
             const printWindow = window.open('', '_blank')
             if (!printWindow) {
                 alert('Please allow pop-ups to print')
@@ -150,7 +197,6 @@ export function HistoryPanel(){
                             th { background: #4a90e2; color: white; padding: 0.75rem; text-align: left; }
                             td { padding: 0.75rem; border-bottom: 1px solid #ddd; }
                             tr:nth-child(even) { background: #f9f9f9; }
-                            .challenge-details { margin-top: 1rem; padding: 1rem; background: #f0f7ff; border-radius: 8px; }
                             .badge { 
                                 padding: 0.25rem 0.75rem; 
                                 border-radius: 20px; 
@@ -208,7 +254,6 @@ export function HistoryPanel(){
             
             printWindow.document.close()
             
-            // Wait for content to load then print
             setTimeout(() => {
                 printWindow.print()
             }, 500)
@@ -245,30 +290,23 @@ export function HistoryPanel(){
     // Initial fetch
     useEffect(() => {
         fetchHistory(0)
-    }, []) // Empty dependency array = run once on mount
+    }, [fetchHistory])
 
     // Fetch when filters change
     useEffect(() => {
-        // Reset to first page when filters change
         fetchHistory(0)
-    }, [filterDifficulty, sortBy]) // Removed searchTerm from here - we'll handle it separately
+    }, [filterDifficulty, sortBy, fetchHistory])
 
     // Debounced search
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (page !== 0) {
-                // Reset to first page on search
-                fetchHistory(0)
-            } else {
-                fetchHistory(0)
-            }
+            fetchHistory(0)
         }, 500)
 
         return () => clearTimeout(timer)
-    }, [searchTerm])
+    }, [searchTerm, fetchHistory])
 
     const handlePageChange = (newPage) => {
-        setPage(newPage)
         fetchHistory(newPage)
     }
 
@@ -292,7 +330,6 @@ export function HistoryPanel(){
         setFilterDifficulty("")
         setSearchTerm("")
         setSortBy("desc")
-        // Fetch will be triggered by useEffect
     }
 
     const totalPages = Math.ceil(total / limit)
@@ -342,7 +379,8 @@ export function HistoryPanel(){
         headerActions: {
             display: 'flex',
             gap: '1rem',
-            alignItems: 'center'
+            alignItems: 'center',
+            flexWrap: 'wrap'
         },
         stats: {
             color: '#666',
@@ -351,7 +389,6 @@ export function HistoryPanel(){
             padding: '0.5rem 1rem',
             borderRadius: '20px'
         },
-        // NEW: Export button styles
         exportContainer: {
             display: 'flex',
             gap: '0.5rem',
@@ -527,7 +564,8 @@ export function HistoryPanel(){
             padding: '1.25rem',
             cursor: 'pointer',
             transition: 'all 0.3s',
-            border: '2px solid transparent'
+            border: '2px solid transparent',
+            position: 'relative'
         },
         historyCardHover: {
             borderColor: '#4a90e2',
@@ -540,7 +578,8 @@ export function HistoryPanel(){
         cardHeader: {
             display: 'flex',
             justifyContent: 'space-between',
-            alignItems: 'center'
+            alignItems: 'center',
+            width: '100%'
         },
         cardTitle: {
             fontSize: '1.1rem',
@@ -587,9 +626,41 @@ export function HistoryPanel(){
             padding: '0.25rem 0.75rem',
             borderRadius: '20px'
         },
+        // Share button styles
+        actionButtons: {
+            display: 'flex',
+            gap: '0.5rem',
+            alignItems: 'center'
+        },
+        shareButton: {
+            padding: '0.5rem',
+            borderRadius: '6px',
+            border: 'none',
+            background: 'transparent',
+            color: '#3498db',
+            cursor: 'pointer',
+            fontSize: '1.2rem',
+            transition: 'all 0.2s',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+        },
+        shareFeedback: {
+            position: 'absolute',
+            top: '10px',
+            right: '10px',
+            background: '#4a90e2',
+            color: 'white',
+            padding: '4px 12px',
+            borderRadius: '20px',
+            fontSize: '0.85rem',
+            animation: 'fadeInOut 2s ease',
+            zIndex: 10
+        },
         expandIcon: {
             color: '#4a90e2',
-            fontSize: '0.9rem'
+            fontSize: '0.9rem',
+            marginLeft: '0.5rem'
         },
         expandedContent: {
             marginTop: '1rem',
@@ -633,17 +704,23 @@ export function HistoryPanel(){
     }
 
     // Add keyframe animation
-    const spinnerKeyframes = `
+    const keyframes = `
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-10px); }
+            20% { opacity: 1; transform: translateY(0); }
+            80% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-10px); }
         }
     `
 
     if (isLoading && page === 0) {
         return (
             <>
-                <style>{spinnerKeyframes}</style>
+                <style>{keyframes}</style>
                 <div style={styles.container}>
                     <div style={styles.loadingContainer}>
                         <div style={styles.spinner}></div>
@@ -674,7 +751,7 @@ export function HistoryPanel(){
 
     return (
         <>
-            <style>{spinnerKeyframes}</style>
+            <style>{keyframes}</style>
             <div style={styles.container}>
                 <div style={styles.header}>
                     <h2 style={styles.title}>Challenge History</h2>
@@ -685,7 +762,7 @@ export function HistoryPanel(){
                             </span>
                         )}
                         
-                        {/* NEW: Export controls */}
+                        {/* Export controls */}
                         {history.length > 0 && (
                             <div style={styles.exportContainer}>
                                 <select
@@ -855,6 +932,13 @@ export function HistoryPanel(){
                                         }
                                     }}
                                 >
+                                    {/* Share feedback popup */}
+                                    {shareFeedback.show && shareFeedback.challengeId === challenge.id && (
+                                        <div style={styles.shareFeedback}>
+                                            {shareFeedback.message}
+                                        </div>
+                                    )}
+                                    
                                     <div style={styles.cardHeader}>
                                         <div>
                                             <h3 style={styles.cardTitle}>{challenge.title}</h3>
@@ -881,9 +965,23 @@ export function HistoryPanel(){
                                                 </span>
                                             </div>
                                         </div>
-                                        <span style={styles.expandIcon}>
-                                            {selectedChallenge?.id === challenge.id ? '▼' : '▶'}
-                                        </span>
+                                        
+                                        {/* Action Buttons */}
+                                        <div style={styles.actionButtons}>
+                                            {/* Share Button */}
+                                            <button
+                                                onClick={(e) => handleShareChallenge(challenge, e)}
+                                                style={styles.shareButton}
+                                                onMouseEnter={(e) => e.target.style.transform = 'scale(1.1)'}
+                                                onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+                                                title="Share challenge"
+                                            >
+                                                🔗
+                                            </button>
+                                            <span style={styles.expandIcon}>
+                                                {selectedChallenge?.id === challenge.id ? '▼' : '▶'}
+                                            </span>
+                                        </div>
                                     </div>
                                     
                                     {selectedChallenge?.id === challenge.id && (

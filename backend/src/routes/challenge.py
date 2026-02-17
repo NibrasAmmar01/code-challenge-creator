@@ -13,7 +13,8 @@ from ..database.models import get_db
 from ..ai_generator import generate_challenge as ai_generate_challenge
 from ..ai_generator import get_fallback_challenge
 import json
-from datetime import datetime
+import os
+from datetime import datetime, timedelta
 from typing import Optional, List
 import logging
 import traceback
@@ -47,7 +48,7 @@ class ChallengeResponse(BaseModel):
     title: str
     question: str
     options: List[str]
-    correct_answer_id: int  # Changed from correct_answer_index
+    correct_answer_id: int
     explanation: str
     difficulty: str
     topic: str
@@ -66,7 +67,7 @@ class AnswerValidationRequest(BaseModel):
 class AnswerValidationResponse(BaseModel):
     """Response model for answer validation"""
     is_correct: bool
-    correct_answer_id: int  # Changed from correct_answer_index
+    correct_answer_id: int
     explanation: str
     feedback: str
 
@@ -77,6 +78,12 @@ class QuotaResponse(BaseModel):
     total_quota: int
     last_reset_date: Optional[str] = None
     next_reset_date: Optional[str] = None
+
+class ShareResponse(BaseModel):
+    """Response model for share link"""
+    share_url: str
+    challenge_id: int
+    title: str
 
 # ============= Challenge Endpoints =============
 
@@ -145,7 +152,7 @@ async def generate_challenge(
             "options",
             ["Option A", "Option B", "Option C", "Option D"]
         )
-        challenge_data["correct_answer_id"] = challenge_data.get("correct_answer_index", 0)  # FIXED: Map to correct_answer_id
+        challenge_data["correct_answer_id"] = challenge_data.get("correct_answer_index", 0)
         challenge_data["explanation"] = challenge_data.get(
             "explanation",
             f"This is a {challenge_request.difficulty} challenge about {challenge_request.topic}."
@@ -161,7 +168,7 @@ async def generate_challenge(
             difficulty=challenge_request.difficulty,
             question=challenge_data["question"],
             options=json.dumps(challenge_data["options"]),
-            correct_answer_index=challenge_data["correct_answer_id"],  # FIXED: Pass correct_answer_id
+            correct_answer_index=challenge_data["correct_answer_id"],
             explanation=challenge_data["explanation"],
             topic=challenge_request.topic,
             time_complexity=challenge_data.get("time_complexity"),
@@ -180,7 +187,7 @@ async def generate_challenge(
             title=challenge_data["title"],
             question=challenge_data["question"],
             options=challenge_data["options"],
-            correct_answer_id=challenge_data["correct_answer_id"],  # FIXED: Use correct_answer_id
+            correct_answer_id=challenge_data["correct_answer_id"],
             explanation=challenge_data["explanation"],
             difficulty=challenge_request.difficulty,
             topic=challenge_request.topic,
@@ -289,6 +296,7 @@ async def my_history(
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error fetching history: {str(e)}")
     
+
 @router.get("/quota", response_model=QuotaResponse)
 async def get_quota(
     fastapi_request: Request,
@@ -315,9 +323,7 @@ async def get_quota(
         # Calculate next reset date
         next_reset_date = None
         if quota.last_reset_date:
-            next_reset_date = quota.last_reset_date.replace(
-                day=quota.last_reset_date.day + 1
-            ).isoformat() if quota.last_reset_date else None
+            next_reset_date = (quota.last_reset_date + timedelta(days=1)).isoformat()
         
         return QuotaResponse(
             user_id=user_id,
@@ -367,7 +373,7 @@ async def get_challenge_by_id(
             "title": challenge.title,
             "question": challenge.question,
             "options": options,
-            "correct_answer_id": challenge.correct_answer_id,  # FIXED: Use correct_answer_id
+            "correct_answer_id": challenge.correct_answer_id,
             "explanation": challenge.explanation,
             "difficulty": challenge.difficulty,
             "topic": challenge.topic,
@@ -406,12 +412,11 @@ async def validate_answer(
         if not challenge:
             raise HTTPException(status_code=404, detail="Challenge not found")
         
-        # FIXED: Use correct_answer_id from the model
         is_correct = (validation_request.selected_answer_index == challenge.correct_answer_id)
         
         return AnswerValidationResponse(
             is_correct=is_correct,
-            correct_answer_id=challenge.correct_answer_id,  # FIXED: Use correct_answer_id
+            correct_answer_id=challenge.correct_answer_id,
             explanation=challenge.explanation if not is_correct else "Correct! Well done!",
             feedback="Great job! 🎉" if is_correct else "Not quite right. Check the explanation below. 💡"
         )
@@ -450,7 +455,7 @@ async def get_hint(
         if not challenge:
             raise HTTPException(status_code=404, detail="Challenge not found")
         
-        # Check quota for hint usage (optional - you can decide if hints cost quota)
+        # Check quota for hint usage
         quota = get_challenge_quota(db, user_id)
         if not quota or quota.quota_remaining <= 0:
             raise HTTPException(status_code=429, detail="No quota remaining for hints")
@@ -466,10 +471,6 @@ async def get_hint(
             hint_level=hint_level
         )
         
-        # Optional: Decrement quota for hint usage
-        # quota.quota_remaining -= 1
-        # db.commit()
-        
         return {
             "hint": hint,
             "hint_level": hint_level,
@@ -482,6 +483,47 @@ async def get_hint(
         logger.error(f"Error generating hint: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error generating hint: {str(e)}")
+
+
+@router.get("/challenge/{challenge_id}/share", response_model=ShareResponse)
+async def get_share_link(
+    challenge_id: int,
+    fastapi_request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a shareable link for a challenge
+    """
+    try:
+        user_details = authenticate_and_get_user_details(fastapi_request)
+        user_id = user_details.get("user_id")
+        
+        # Verify the challenge exists and belongs to user
+        from ..database.models import Challenge
+        challenge = db.query(Challenge).filter(
+            Challenge.id == challenge_id,
+            Challenge.created_by == user_id
+        ).first()
+        
+        if not challenge:
+            raise HTTPException(status_code=404, detail="Challenge not found")
+        
+        # Get frontend URL from environment or use default
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+        share_url = f"{frontend_url}/challenge/{challenge_id}"
+        
+        return ShareResponse(
+            share_url=share_url,
+            challenge_id=challenge_id,
+            title=challenge.title
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating share link: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/explain-code")
