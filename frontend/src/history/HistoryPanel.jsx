@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
+import { Link } from "react-router-dom" // Add this import
 import { MCQChallenge } from "../challenge/MCQChallenge"
 import { useApi } from "../utils/api"
 
@@ -704,6 +705,12 @@ export function HistoryPanel(){
             alignItems: 'center',
             justifyContent: 'center'
         },
+        viewButton: {
+            color: '#4a90e2',
+            textDecoration: 'none',
+            fontSize: '1.2rem',
+            padding: '0.5rem'
+        },
         bookmarkButton: {
             color: '#f1c40f'
         },
@@ -1046,6 +1053,16 @@ export function HistoryPanel(){
                                         
                                         {/* Action Buttons */}
                                         <div style={styles.actionButtons}>
+                                            {/* View Details Button - NEW */}
+                                            <Link
+                                                to={`/challenge/${challenge.id}`}
+                                                onClick={(e) => e.stopPropagation()}
+                                                style={styles.viewButton}
+                                                title="View details"
+                                            >
+                                                🔍
+                                            </Link>
+                                            
                                             {/* Bookmark Button */}
                                             <button
                                                 onClick={(e) => toggleBookmark(challenge.id, e)}
