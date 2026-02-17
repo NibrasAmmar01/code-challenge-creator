@@ -85,6 +85,16 @@ class ShareResponse(BaseModel):
     challenge_id: int
     title: str
 
+class BookmarkResponse(BaseModel):
+    """Response model for bookmark toggle"""
+    bookmarked: bool
+    challenge_id: int
+
+class BookmarkListResponse(BaseModel):
+    """Response model for bookmarks list"""
+    total: int
+    bookmarks: List[dict]
+
 # ============= Challenge Endpoints =============
 
 @router.post("/generate-challenge", response_model=ChallengeResponse)
@@ -522,6 +532,92 @@ async def get_share_link(
         raise
     except Exception as e:
         logger.error(f"Error generating share link: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============= Bookmark Endpoints =============
+
+@router.post("/challenge/{challenge_id}/bookmark", response_model=BookmarkResponse)
+async def toggle_bookmark(
+    challenge_id: int,
+    fastapi_request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Toggle bookmark status for a challenge
+    """
+    try:
+        user_details = authenticate_and_get_user_details(fastapi_request)
+        user_id = user_details.get("user_id")
+        
+        from ..database.models import ChallengeBookmark
+        
+        # Check if already bookmarked
+        existing = db.query(ChallengeBookmark).filter(
+            ChallengeBookmark.user_id == user_id,
+            ChallengeBookmark.challenge_id == challenge_id
+        ).first()
+        
+        if existing:
+            db.delete(existing)
+            db.commit()
+            return {"bookmarked": False, "challenge_id": challenge_id}
+        else:
+            bookmark = ChallengeBookmark(
+                user_id=user_id,
+                challenge_id=challenge_id
+            )
+            db.add(bookmark)
+            db.commit()
+            return {"bookmarked": True, "challenge_id": challenge_id}
+            
+    except Exception as e:
+        logger.error(f"Error toggling bookmark: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/bookmarks", response_model=BookmarkListResponse)
+async def get_bookmarks(
+    fastapi_request: Request,
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 50
+):
+    """
+    Get user's bookmarked challenges
+    """
+    try:
+        user_details = authenticate_and_get_user_details(fastapi_request)
+        user_id = user_details.get("user_id")
+        
+        from ..database.models import Challenge, ChallengeBookmark
+        
+        bookmarks = db.query(Challenge).join(
+            ChallengeBookmark
+        ).filter(
+            ChallengeBookmark.user_id == user_id
+        ).order_by(
+            ChallengeBookmark.created_at.desc()
+        ).offset(skip).limit(limit).all()
+        
+        return {
+            "total": len(bookmarks),
+            "bookmarks": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "difficulty": c.difficulty,
+                    "topic": c.topic,
+                    "date_created": c.date_created.isoformat() if c.date_created else None
+                }
+                for c in bookmarks
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching bookmarks: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 

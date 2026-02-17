@@ -17,12 +17,16 @@ export function HistoryPanel(){
     // New state for share feedback
     const [shareFeedback, setShareFeedback] = useState({ show: false, message: '', challengeId: null })
     
+    // New state for bookmarks
+    const [bookmarks, setBookmarks] = useState(new Set())
+    const [showBookmarksOnly, setShowBookmarksOnly] = useState(false)
+    
     // Filter states
     const [filterDifficulty, setFilterDifficulty] = useState("")
     const [searchTerm, setSearchTerm] = useState("")
     const [sortBy, setSortBy] = useState("desc") // desc = newest first, asc = oldest first
     
-    const { get } = useApi()
+    const { get, post } = useApi()
     const limit = 10
 
     // Memoize fetchHistory to prevent unnecessary re-renders
@@ -61,6 +65,42 @@ export function HistoryPanel(){
             setIsLoading(false)
         }
     }, [filterDifficulty, searchTerm, sortBy, get, limit])
+
+    // Fetch bookmarks on mount
+    useEffect(() => {
+        fetchBookmarks()
+    }, [])
+
+    const fetchBookmarks = async () => {
+        try {
+            const response = await get('challenges/bookmarks')
+            const bookmarkIds = new Set(response.bookmarks.map(b => b.id))
+            setBookmarks(bookmarkIds)
+        } catch (err) {
+            console.error("Failed to fetch bookmarks:", err)
+        }
+    }
+
+    // Toggle bookmark function
+    const toggleBookmark = async (challengeId, e) => {
+        e.stopPropagation()
+        
+        try {
+            const result = await post(`challenges/challenge/${challengeId}/bookmark`, {})
+            
+            setBookmarks(prev => {
+                const newSet = new Set(prev)
+                if (result.bookmarked) {
+                    newSet.add(challengeId)
+                } else {
+                    newSet.delete(challengeId)
+                }
+                return newSet
+            })
+        } catch (err) {
+            console.error("Failed to toggle bookmark:", err)
+        }
+    }
 
     // Share function
     const handleShareChallenge = async (challenge, e) => {
@@ -101,7 +141,6 @@ export function HistoryPanel(){
                     setShareFeedback({ show: false, message: '', challengeId: null })
                 }, 2000)
             } catch {
-                // Use '_' to indicate intentionally unused parameter
                 alert('Could not copy to clipboard. Here\'s the link:\n' + fallbackUrl)
             }
         }
@@ -330,6 +369,7 @@ export function HistoryPanel(){
         setFilterDifficulty("")
         setSearchTerm("")
         setSortBy("desc")
+        setShowBookmarksOnly(false)
     }
 
     const totalPages = Math.ceil(total / limit)
@@ -350,8 +390,14 @@ export function HistoryPanel(){
     const activeFilterCount = [
         filterDifficulty !== "",
         searchTerm.trim() !== "",
-        sortBy !== "desc"
+        sortBy !== "desc",
+        showBookmarksOnly
     ].filter(Boolean).length
+
+    // Filter history based on bookmarks if needed
+    const displayedHistory = showBookmarksOnly 
+        ? history.filter(ch => bookmarks.has(ch.id))
+        : history
 
     const styles = {
         container: {
@@ -478,6 +524,20 @@ export function HistoryPanel(){
             transition: 'all 0.2s',
             whiteSpace: 'nowrap',
             height: '42px'
+        },
+        bookmarksToggle: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem 1rem',
+            background: showBookmarksOnly ? '#4a90e2' : 'white',
+            color: showBookmarksOnly ? 'white' : '#666',
+            border: '1px solid #e0e0e0',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '0.95rem',
+            height: '42px',
+            transition: 'all 0.2s'
         },
         statsRow: {
             display: 'grid',
@@ -626,24 +686,32 @@ export function HistoryPanel(){
             padding: '0.25rem 0.75rem',
             borderRadius: '20px'
         },
-        // Share button styles
+        // Action buttons styles
         actionButtons: {
             display: 'flex',
             gap: '0.5rem',
             alignItems: 'center'
         },
-        shareButton: {
+        actionButton: {
             padding: '0.5rem',
             borderRadius: '6px',
             border: 'none',
             background: 'transparent',
-            color: '#3498db',
             cursor: 'pointer',
             fontSize: '1.2rem',
             transition: 'all 0.2s',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center'
+        },
+        bookmarkButton: {
+            color: '#f1c40f'
+        },
+        bookmarkButtonInactive: {
+            color: '#999'
+        },
+        shareButton: {
+            color: '#3498db'
         },
         shareFeedback: {
             position: 'absolute',
@@ -845,6 +913,14 @@ export function HistoryPanel(){
                         </select>
                     </div>
 
+                    <button
+                        style={styles.bookmarksToggle}
+                        onClick={() => setShowBookmarksOnly(!showBookmarksOnly)}
+                    >
+                        <span>⭐</span>
+                        {showBookmarksOnly ? 'Showing Bookmarks' : 'Show Bookmarks'}
+                    </button>
+
                     {activeFilterCount > 0 && (
                         <button
                             style={styles.clearFiltersButton}
@@ -864,10 +940,10 @@ export function HistoryPanel(){
                 </div>
 
                 {/* Statistics Cards */}
-                {history.length > 0 && (
+                {displayedHistory.length > 0 && (
                     <div style={styles.statsRow}>
                         <div style={styles.statCard}>
-                            <div style={styles.statValue}>{history.length}</div>
+                            <div style={styles.statValue}>{displayedHistory.length}</div>
                             <div style={styles.statLabel}>Showing</div>
                         </div>
                         {difficultyStats.easy > 0 && (
@@ -897,21 +973,23 @@ export function HistoryPanel(){
                     </div>
                 )}
 
-                {history.length === 0 && !isLoading ? (
+                {displayedHistory.length === 0 && !isLoading ? (
                     <div style={styles.emptyState}>
                         <p style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>
-                            {searchTerm || filterDifficulty ? '🔍 No matches found' : '🎯 No challenges yet'}
+                            {showBookmarksOnly ? '⭐ No bookmarked challenges' : (searchTerm || filterDifficulty ? '🔍 No matches found' : '🎯 No challenges yet')}
                         </p>
                         <p style={{ color: '#999' }}>
-                            {searchTerm || filterDifficulty 
-                                ? 'Try adjusting your filters' 
-                                : 'Generate your first coding challenge to get started!'}
+                            {showBookmarksOnly 
+                                ? 'Bookmark challenges by clicking the star icon' 
+                                : (searchTerm || filterDifficulty 
+                                    ? 'Try adjusting your filters' 
+                                    : 'Generate your first coding challenge to get started!')}
                         </p>
                     </div>
                 ) : (
                     <>
                         <div style={styles.historyList}>
-                            {history.map((challenge) => (
+                            {displayedHistory.map((challenge) => (
                                 <div 
                                     key={challenge.id}
                                     style={{
@@ -968,10 +1046,25 @@ export function HistoryPanel(){
                                         
                                         {/* Action Buttons */}
                                         <div style={styles.actionButtons}>
+                                            {/* Bookmark Button */}
+                                            <button
+                                                onClick={(e) => toggleBookmark(challenge.id, e)}
+                                                style={{
+                                                    ...styles.actionButton,
+                                                    color: bookmarks.has(challenge.id) ? '#f1c40f' : '#999'
+                                                }}
+                                                title={bookmarks.has(challenge.id) ? "Remove bookmark" : "Bookmark challenge"}
+                                            >
+                                                {bookmarks.has(challenge.id) ? '★' : '☆'}
+                                            </button>
+                                            
                                             {/* Share Button */}
                                             <button
                                                 onClick={(e) => handleShareChallenge(challenge, e)}
-                                                style={styles.shareButton}
+                                                style={{
+                                                    ...styles.actionButton,
+                                                    ...styles.shareButton
+                                                }}
                                                 onMouseEnter={(e) => e.target.style.transform = 'scale(1.1)'}
                                                 onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
                                                 title="Share challenge"
@@ -996,7 +1089,7 @@ export function HistoryPanel(){
                             ))}
                         </div>
 
-                        {totalPages > 1 && (
+                        {totalPages > 1 && !showBookmarksOnly && (
                             <div style={styles.pagination}>
                                 <button
                                     style={{

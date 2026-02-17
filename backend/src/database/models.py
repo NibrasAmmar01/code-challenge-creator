@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, create_engine, ForeignKey, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -30,6 +30,17 @@ class ChallengeQuota(Base):
     quota_remaining = Column(Integer, nullable=False, default=50)
     last_reset_date = Column(DateTime, default=datetime.now)
 
+class ChallengeBookmark(Base):
+    __tablename__ = 'challenge_bookmarks'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False)
+    challenge_id = Column(Integer, ForeignKey('challenges.id', ondelete='CASCADE'), nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    
+    __table_args__ = (
+        UniqueConstraint('user_id', 'challenge_id', name='unique_user_challenge_bookmark'),
+    )
 
 Base.metadata.create_all(engine)
 
