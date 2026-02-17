@@ -12,3 +12,4 @@ wheels/
 # Environment variables - use forward slashes
 .env
 backend/src/.env
+backend/database.db
