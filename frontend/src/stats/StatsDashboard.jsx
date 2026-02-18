@@ -6,12 +6,20 @@ export function StatsDashboard() {
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState(null)
     const [timeframe, setTimeframe] = useState("all")
+    const [streakInfo, setStreakInfo] = useState(null)
+    const [selectedBadge, setSelectedBadge] = useState(null)
     const { get } = useApi()
 
     const fetchStats = useCallback(async () => {
         setIsLoading(true)
         try {
+            // Fetch main stats
             const data = await get(`stats?timeframe=${timeframe}`)
+            
+            // Fetch streak info separately
+            const streak = await get('stats/streak')
+            setStreakInfo(streak)
+            
             setStats(data)
             setError(null)
         } catch (err) {
@@ -20,11 +28,248 @@ export function StatsDashboard() {
         } finally {
             setIsLoading(false)
         }
-    }, [timeframe, get]) // Add dependencies
+    }, [timeframe, get])
 
     useEffect(() => {
         fetchStats()
-    }, [fetchStats]) // Only depend on fetchStats
+    }, [fetchStats])
+
+    // Transform backend data to match frontend expectations
+    const transformedStats = stats ? {
+        totalChallenges: stats.totalChallenges || 0,
+        byDifficulty: stats.byDifficulty || { easy: 0, medium: 0, hard: 0 },
+        successRate: stats.successRate || { easy: 0, medium: 0, hard: 0 },
+        favoriteTopics: stats.favoriteTopics || [],
+        streak: streakInfo?.current_streak || stats.streak || 0,
+        achievements: stats.achievements || [],
+        recentActivity: stats.recentActivity || []
+    } : null
+
+    // Certificate generation function
+    const generateCertificate = (badge) => {
+        // Get user name from local storage or use default
+        const userName = localStorage.getItem('userName') || 'User'
+        
+        // Create a simple HTML certificate
+        const certificateHTML = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Certificate of Achievement</title>
+                <style>
+                    body {
+                        font-family: 'Arial', sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        margin: 0;
+                        padding: 20px;
+                    }
+                    .certificate {
+                        background: white;
+                        max-width: 800px;
+                        width: 100%;
+                        padding: 50px;
+                        border-radius: 20px;
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                        text-align: center;
+                        position: relative;
+                        border: 10px solid #f0f0f0;
+                    }
+                    .certificate::before {
+                        content: "🏆";
+                        position: absolute;
+                        top: -30px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        font-size: 60px;
+                        background: white;
+                        padding: 0 20px;
+                    }
+                    h1 {
+                        color: #333;
+                        font-size: 2.5em;
+                        margin-bottom: 10px;
+                    }
+                    .subtitle {
+                        color: #666;
+                        font-size: 1.2em;
+                        margin-bottom: 30px;
+                    }
+                    .badge-icon {
+                        font-size: 80px;
+                        margin: 20px 0;
+                    }
+                    .badge-name {
+                        font-size: 2em;
+                        color: #4a90e2;
+                        font-weight: bold;
+                        margin: 20px 0;
+                        padding: 10px 30px;
+                        background: linear-gradient(135deg, #667eea20, #764ba220);
+                        display: inline-block;
+                        border-radius: 50px;
+                    }
+                    .recipient {
+                        font-size: 1.3em;
+                        color: #333;
+                        margin: 20px 0;
+                    }
+                    .date {
+                        color: #999;
+                        font-size: 1.1em;
+                        margin-top: 30px;
+                    }
+                    .seal {
+                        font-size: 40px;
+                        margin-top: 30px;
+                        opacity: 0.8;
+                    }
+                    .footer {
+                        margin-top: 40px;
+                        color: #666;
+                        font-size: 0.9em;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="certificate">
+                    <h1>🏅 Certificate of Achievement</h1>
+                    <div class="subtitle">Proudly presented to</div>
+                    <div class="recipient">${userName}</div>
+                    <div class="badge-icon">${badge.icon}</div>
+                    <div class="badge-name">${badge.name}</div>
+                    <div class="subtitle">${badge.description}</div>
+                    <div class="date">Earned on ${new Date().toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                    })}</div>
+                    <div class="seal">✨</div>
+                    <div class="footer">Code Challenge Generator • Master Your Skills</div>
+                </div>
+            </body>
+            </html>
+        `
+        
+        // Create blob and download
+        const blob = new Blob([certificateHTML], { type: 'text/html' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `certificate-${badge.name.toLowerCase().replace(/\s+/g, '-')}.html`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }
+
+    // Badge Detail Modal Component
+    const BadgeDetailModal = ({ badge, onClose }) => {
+        if (!badge) return null
+        
+        const hasProgress = badge.progress !== undefined && badge.progress !== null
+        const hasTotal = badge.total !== undefined && badge.total !== null
+        const progressValue = hasProgress ? badge.progress : 0
+        const totalValue = hasTotal ? badge.total : 1
+        const progressPercentage = hasProgress && hasTotal ? (progressValue / totalValue) * 100 : 0
+        
+        return (
+            <div style={styles.modalOverlay} onClick={onClose}>
+                <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+                    <button style={styles.modalClose} onClick={onClose}>×</button>
+                    
+                    <div style={styles.modalBadgeIcon}>{badge.icon}</div>
+                    <h2 style={styles.modalTitle}>{badge.name}</h2>
+                    <p style={styles.modalDescription}>{badge.description}</p>
+                    
+                    {badge.unlocked ? (
+                        <>
+                            <div style={styles.certificate}>
+                                <div style={styles.certificateIcon}>🏆</div>
+                                <h3 style={styles.certificateTitle}>Certificate of Achievement</h3>
+                                <p style={styles.certificateText}>
+                                    This certifies that you have earned the
+                                </p>
+                                <h4 style={styles.certificateBadgeName}>{badge.name}</h4>
+                                <p style={styles.certificateDate}>
+                                    {new Date().toLocaleDateString('en-US', { 
+                                        year: 'numeric', 
+                                        month: 'long', 
+                                        day: 'numeric' 
+                                    })}
+                                </p>
+                                <div style={styles.certificateSeal}>✨</div>
+                            </div>
+                            
+                            <div style={styles.modalActions}>
+                                <button 
+                                    style={styles.modalButton}
+                                    onClick={() => generateCertificate(badge)}
+                                    onMouseEnter={(e) => e.target.style.background = '#357abd'}
+                                    onMouseLeave={(e) => e.target.style.background = '#4a90e2'}
+                                >
+                                    📥 Download Certificate
+                                </button>
+                                <button 
+                                    style={styles.modalButtonSecondary}
+                                    onClick={onClose}
+                                    onMouseEnter={(e) => e.target.style.background = '#e0e0e0'}
+                                    onMouseLeave={(e) => e.target.style.background = '#f0f0f0'}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            {hasProgress && hasTotal ? (
+                                <>
+                                    <div style={styles.progressContainer}>
+                                        <div style={styles.progressLabel}>
+                                            <span>Progress</span>
+                                            <span>{progressValue}/{totalValue}</span>
+                                        </div>
+                                        <div style={styles.progressBar}>
+                                            <div style={{
+                                                ...styles.progressFill,
+                                                width: `${progressPercentage}%`
+                                            }} />
+                                        </div>
+                                    </div>
+                                    
+                                    <p style={styles.modalHint}>
+                                        Complete {totalValue - progressValue} more to unlock this badge!
+                                    </p>
+                                </>
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: '2rem' }}>
+                                    <p style={{ fontSize: '1.2rem', marginBottom: '1rem' }}>🔒</p>
+                                    <p style={{ color: '#666' }}>
+                                        This achievement hasn't been started yet.
+                                    </p>
+                                    <p style={{ color: '#999', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+                                        Keep practicing to unlock this badge!
+                                    </p>
+                                </div>
+                            )}
+                            
+                            <button 
+                                style={styles.modalButton}
+                                onClick={onClose}
+                                onMouseEnter={(e) => e.target.style.background = '#357abd'}
+                                onMouseLeave={(e) => e.target.style.background = '#4a90e2'}
+                            >
+                                Got it
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+        )
+    }
 
     const styles = {
         container: {
@@ -36,7 +281,9 @@ export function StatsDashboard() {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: '2rem'
+            marginBottom: '2rem',
+            flexWrap: 'wrap',
+            gap: '1rem'
         },
         title: {
             fontSize: '2rem',
@@ -167,7 +414,8 @@ export function StatsDashboard() {
         topicCount: {
             fontSize: '0.9rem',
             color: '#666',
-            fontWeight: '500'
+            fontWeight: '500',
+            minWidth: '60px'
         },
         badgesGrid: {
             display: 'grid',
@@ -226,6 +474,168 @@ export function StatsDashboard() {
             borderTop: '5px solid #4a90e2',
             borderRadius: '50%',
             animation: 'spin 1s linear infinite'
+        },
+        errorContainer: {
+            textAlign: 'center',
+            padding: '2rem'
+        },
+        retryButton: {
+            padding: '0.5rem 1.5rem',
+            background: '#4a90e2',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            marginTop: '1rem'
+        },
+        // Modal styles
+        modalOverlay: {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+            animation: 'fadeIn 0.3s ease'
+        },
+        modalContent: {
+            background: 'white',
+            borderRadius: '20px',
+            padding: '2rem',
+            maxWidth: '500px',
+            width: '90%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            position: 'relative',
+            animation: 'slideUp 0.3s ease'
+        },
+        modalClose: {
+            position: 'absolute',
+            top: '1rem',
+            right: '1rem',
+            background: 'none',
+            border: 'none',
+            fontSize: '2rem',
+            cursor: 'pointer',
+            color: '#999',
+            width: '40px',
+            height: '40px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '50%',
+            transition: 'all 0.2s'
+        },
+        modalBadgeIcon: {
+            fontSize: '5rem',
+            textAlign: 'center',
+            marginBottom: '1rem'
+        },
+        modalTitle: {
+            fontSize: '1.8rem',
+            fontWeight: '700',
+            color: '#333',
+            textAlign: 'center',
+            marginBottom: '0.5rem'
+        },
+        modalDescription: {
+            fontSize: '1rem',
+            color: '#666',
+            textAlign: 'center',
+            marginBottom: '2rem',
+            lineHeight: '1.6'
+        },
+        certificate: {
+            background: 'linear-gradient(135deg, #fff9e6, #fff)',
+            border: '3px solid #4a90e2',
+            borderRadius: '15px',
+            padding: '2rem',
+            marginBottom: '1.5rem',
+            textAlign: 'center',
+            boxShadow: '0 10px 30px rgba(74, 144, 226, 0.2)'
+        },
+        certificateIcon: {
+            fontSize: '3rem',
+            marginBottom: '1rem'
+        },
+        certificateTitle: {
+            fontSize: '1.4rem',
+            fontWeight: '600',
+            color: '#333',
+            marginBottom: '1rem'
+        },
+        certificateText: {
+            fontSize: '1rem',
+            color: '#666',
+            marginBottom: '0.5rem'
+        },
+        certificateBadgeName: {
+            fontSize: '1.8rem',
+            fontWeight: '700',
+            color: '#4a90e2',
+            marginBottom: '1rem'
+        },
+        certificateDate: {
+            fontSize: '0.95rem',
+            color: '#999',
+            marginBottom: '1rem'
+        },
+        certificateSeal: {
+            fontSize: '2rem',
+            opacity: 0.8
+        },
+        modalActions: {
+            display: 'flex',
+            gap: '1rem',
+            justifyContent: 'center',
+            marginTop: '1rem'
+        },
+        modalButton: {
+            padding: '0.75rem 1.5rem',
+            background: '#4a90e2',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '1rem',
+            fontWeight: '500',
+            cursor: 'pointer',
+            transition: 'background 0.2s',
+            flex: 1
+        },
+        modalButtonSecondary: {
+            padding: '0.75rem 1.5rem',
+            background: '#f0f0f0',
+            color: '#666',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '1rem',
+            fontWeight: '500',
+            cursor: 'pointer',
+            transition: 'background 0.2s',
+            flex: 1
+        },
+        progressContainer: {
+            marginBottom: '1.5rem'
+        },
+        progressLabel: {
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: '0.9rem',
+            color: '#666',
+            marginBottom: '0.5rem'
+        },
+        modalHint: {
+            fontSize: '0.95rem',
+            color: '#f39c12',
+            textAlign: 'center',
+            marginBottom: '1.5rem',
+            padding: '0.75rem',
+            background: '#fff3cd',
+            borderRadius: '8px'
         }
     }
 
@@ -233,6 +643,20 @@ export function StatsDashboard() {
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
     `
 
@@ -250,19 +674,14 @@ export function StatsDashboard() {
     if (error) {
         return (
             <div style={styles.container}>
-                <div style={{ textAlign: 'center', color: '#e74c3c', padding: '2rem' }}>
-                    <p>❌ Failed to load statistics</p>
+                <div style={styles.errorContainer}>
+                    <p style={{ color: '#e74c3c' }}>❌ Failed to load statistics</p>
+                    <p style={{ color: '#666', fontSize: '0.9rem', marginTop: '0.5rem' }}>{error}</p>
                     <button 
                         onClick={fetchStats}
-                        style={{
-                            padding: '0.5rem 1.5rem',
-                            background: '#4a90e2',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            marginTop: '1rem'
-                        }}
+                        style={styles.retryButton}
+                        onMouseEnter={(e) => e.target.style.background = '#357abd'}
+                        onMouseLeave={(e) => e.target.style.background = '#4a90e2'}
                     >
                         Retry
                     </button>
@@ -271,7 +690,7 @@ export function StatsDashboard() {
         )
     }
 
-    const data = stats || {
+    const data = transformedStats || {
         totalChallenges: 0,
         byDifficulty: { easy: 0, medium: 0, hard: 0 },
         successRate: { easy: 0, medium: 0, hard: 0 },
@@ -280,6 +699,18 @@ export function StatsDashboard() {
         achievements: [],
         recentActivity: []
     }
+
+    // Calculate overall success rate
+    const overallSuccess = data.totalChallenges > 0
+        ? Math.round(
+            (data.byDifficulty.easy * (data.successRate.easy / 100) +
+             data.byDifficulty.medium * (data.successRate.medium / 100) +
+             data.byDifficulty.hard * (data.successRate.hard / 100)) / data.totalChallenges
+          )
+        : 0
+
+    // Get favorite topic for display
+    const favoriteTopic = data.favoriteTopics[0]?.name || "N/A"
 
     return (
         <div style={styles.container}>
@@ -297,7 +728,7 @@ export function StatsDashboard() {
                             }}
                             onClick={() => setTimeframe(tf)}
                         >
-                            {tf.charAt(0).toUpperCase() + tf.slice(1)}
+                            {tf === "all" ? "All Time" : tf.charAt(0).toUpperCase() + tf.slice(1)}
                         </button>
                     ))}
                 </div>
@@ -306,39 +737,33 @@ export function StatsDashboard() {
             <div style={styles.statsGrid}>
                 <div style={styles.statCard}>
                     <span style={styles.statIcon}>📝</span>
-                    <span style={styles.statValue}>{data.totalChallenges || 0}</span>
+                    <span style={styles.statValue}>{data.totalChallenges}</span>
                     <span style={styles.statLabel}>Total Challenges</span>
                 </div>
                 
                 <div style={styles.statCard}>
                     <span style={styles.statIcon}>🔥</span>
                     <div style={styles.streakInfo}>
-                        <span style={styles.statValue}>{data.streak || 0}</span>
+                        <span style={styles.statValue}>{data.streak}</span>
                         <span style={styles.streakDays}>days</span>
                     </div>
                     <span style={styles.statLabel}>Current Streak</span>
+                    {streakInfo && streakInfo.longest_streak > data.streak && (
+                        <span style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
+                            Longest: {streakInfo.longest_streak} days
+                        </span>
+                    )}
                 </div>
                 
                 <div style={styles.statCard}>
                     <span style={styles.statIcon}>⭐</span>
-                    <span style={styles.statValue}>
-                        {data.totalChallenges > 0 
-                            ? Math.round(
-                                (data.byDifficulty?.easy * (data.successRate?.easy || 0) / 100 +
-                                 data.byDifficulty?.medium * (data.successRate?.medium || 0) / 100 +
-                                 data.byDifficulty?.hard * (data.successRate?.hard || 0) / 100) /
-                                data.totalChallenges
-                            )
-                            : 0}%
-                    </span>
+                    <span style={styles.statValue}>{overallSuccess}%</span>
                     <span style={styles.statLabel}>Overall Success</span>
                 </div>
                 
                 <div style={styles.statCard}>
                     <span style={styles.statIcon}>🎯</span>
-                    <span style={styles.statValue}>
-                        {data.favoriteTopics?.[0]?.name || "N/A"}
-                    </span>
+                    <span style={styles.statValue}>{favoriteTopic}</span>
                     <span style={styles.statLabel}>Favorite Topic</span>
                 </div>
             </div>
@@ -357,17 +782,17 @@ export function StatsDashboard() {
                                 ...styles.difficultyValue,
                                 ...styles[level]
                             }}>
-                                {data.successRate?.[level] || 0}%
+                                {data.successRate[level]}%
                             </div>
                             <div style={styles.progressBar}>
                                 <div style={{
                                     ...styles.progressFill,
-                                    width: `${data.successRate?.[level] || 0}%`,
+                                    width: `${data.successRate[level]}%`,
                                     background: styles[level].color
                                 }} />
                             </div>
                             <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.25rem' }}>
-                                {data.byDifficulty?.[level] || 0} challenges
+                                {data.byDifficulty[level]} challenges
                             </div>
                         </div>
                     ))}
@@ -379,7 +804,7 @@ export function StatsDashboard() {
                     <span>📚</span> Most Practiced Topics
                 </h2>
                 <div style={styles.topicsList}>
-                    {data.favoriteTopics?.map((topic, index) => (
+                    {data.favoriteTopics.map((topic, index) => (
                         <div key={topic.name} style={styles.topicItem}>
                             <span style={{ fontSize: '1.2rem' }}>
                                 {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📌'}
@@ -396,6 +821,11 @@ export function StatsDashboard() {
                             </div>
                         </div>
                     ))}
+                    {data.favoriteTopics.length === 0 && (
+                        <p style={{ color: '#999', textAlign: 'center', padding: '2rem' }}>
+                            No topics yet. Start practicing to see your favorite topics!
+                        </p>
+                    )}
                 </div>
             </div>
 
@@ -404,37 +834,68 @@ export function StatsDashboard() {
                     <span>🏅</span> Achievements
                 </h2>
                 <div style={styles.badgesGrid}>
-                    {data.achievements?.map((badge) => (
-                        <div
-                            key={badge.id}
-                            style={{
-                                ...styles.badgeCard,
-                                ...(!badge.unlocked ? styles.badgeLocked : {})
-                            }}
-                        >
-                            <div style={styles.badgeIcon}>{badge.icon}</div>
-                            <div style={styles.badgeName}>{badge.name}</div>
-                            <div style={styles.badgeDescription}>{badge.description}</div>
-                            {!badge.unlocked && badge.progress !== undefined && (
-                                <div style={{ marginTop: '0.5rem' }}>
-                                    <div style={{ ...styles.progressBar, width: '100%' }}>
-                                        <div style={{
-                                            ...styles.progressFill,
-                                            width: `${(badge.progress / badge.total) * 100}%`
-                                        }} />
+                    {data.achievements.map((badge) => {
+                        // Ensure progress and total have default values
+                        const hasProgress = badge.progress !== undefined && badge.progress !== null
+                        const hasTotal = badge.total !== undefined && badge.total !== null
+                        const progressValue = hasProgress ? badge.progress : 0
+                        const totalValue = hasTotal ? badge.total : 1
+                        const progressPercentage = hasProgress && hasTotal ? (progressValue / totalValue) * 100 : 0
+                        
+                        return (
+                            <div
+                                key={badge.id}
+                                style={{
+                                    ...styles.badgeCard,
+                                    ...(!badge.unlocked ? styles.badgeLocked : {})
+                                }}
+                                onClick={() => setSelectedBadge(badge)}
+                                title={badge.description}
+                                onMouseEnter={(e) => {
+                                    if (badge.unlocked) {
+                                        e.currentTarget.style.transform = 'scale(1.05)'
+                                        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)'
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1)'
+                                    e.currentTarget.style.boxShadow = 'none'
+                                }}
+                            >
+                                <div style={styles.badgeIcon}>{badge.icon}</div>
+                                <div style={styles.badgeName}>{badge.name}</div>
+                                <div style={styles.badgeDescription}>{badge.description}</div>
+                                
+                                {/* Show progress only for badges that have progress data AND are not unlocked */}
+                                {!badge.unlocked && hasProgress && hasTotal && (
+                                    <div style={{ marginTop: '0.5rem' }}>
+                                        <div style={{ ...styles.progressBar, width: '100%' }}>
+                                            <div style={{
+                                                ...styles.progressFill,
+                                                width: `${progressPercentage}%`
+                                            }} />
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                                            {progressValue}/{totalValue}
+                                        </div>
                                     </div>
-                                    <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
-                                        {badge.progress}/{badge.total}
+                                )}
+                                
+                                {/* Show message for badges without progress data */}
+                                {!badge.unlocked && !hasProgress && (
+                                    <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.5rem' }}>
+                                        🔒 Not started
                                     </div>
-                                </div>
-                            )}
-                            {badge.unlocked && (
-                                <div style={{ fontSize: '0.75rem', color: '#2ecc71', marginTop: '0.25rem' }}>
-                                    ✅ Unlocked
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                                )}
+                                
+                                {badge.unlocked && (
+                                    <div style={{ fontSize: '0.75rem', color: '#2ecc71', marginTop: '0.25rem' }}>
+                                        ✅ Unlocked
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    })}
                 </div>
             </div>
 
@@ -444,36 +905,53 @@ export function StatsDashboard() {
                 </h2>
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(7, 1fr)',
+                    gridTemplateColumns: `repeat(${data.recentActivity.length}, 1fr)`,
                     gap: '0.5rem',
                     marginTop: '1rem'
                 }}>
-                    {data.recentActivity?.map((day) => (
-                        <div key={day.date} style={{ textAlign: 'center' }}>
-                            <div style={{
-                                width: '100%',
-                                aspectRatio: '1',
-                                borderRadius: '8px',
-                                background: day.count === 0 ? '#f0f0f0' :
-                                           day.count === 1 ? '#c6e48b' :
-                                           day.count === 2 ? '#7bc96f' :
-                                           '#239a3b',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: day.count > 2 ? 'white' : 'inherit',
-                                fontSize: '0.8rem',
-                                fontWeight: 'bold'
-                            }}>
-                                {day.count > 0 ? day.count : ''}
+                    {data.recentActivity.map((day) => {
+                        const maxCount = Math.max(...data.recentActivity.map(d => d.count), 1)
+                        const intensity = day.count === 0 ? 0 : (day.count / maxCount)
+                        const bgColor = day.count === 0 ? '#f0f0f0' :
+                                      intensity < 0.33 ? '#c6e48b' :
+                                      intensity < 0.66 ? '#7bc96f' :
+                                      '#239a3b'
+                        
+                        return (
+                            <div key={day.date} style={{ textAlign: 'center' }}>
+                                <div style={{
+                                    width: '100%',
+                                    aspectRatio: '1',
+                                    borderRadius: '8px',
+                                    background: bgColor,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: intensity > 0.66 ? 'white' : 'inherit',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 'bold'
+                                }}>
+                                    {day.count > 0 ? day.count : ''}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '0.25rem' }}>
+                                    {new Date(day.date).toLocaleDateString('en-US', { 
+                                        month: 'short', 
+                                        day: 'numeric' 
+                                    })}
+                                </div>
                             </div>
-                            <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '0.25rem' }}>
-                                {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}
-                            </div>
-                        </div>
-                    ))}
+                        )
+                    })}
                 </div>
             </div>
+
+            {/* Badge Detail Modal */}
+            {selectedBadge && (
+                <BadgeDetailModal 
+                    badge={selectedBadge} 
+                    onClose={() => setSelectedBadge(null)} 
+                />
+            )}
         </div>
     )
 }
