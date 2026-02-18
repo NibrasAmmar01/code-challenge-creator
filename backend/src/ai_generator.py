@@ -2,9 +2,11 @@ import os
 import json
 import time
 import asyncio
-from typing import Dict, Any
+import hashlib
+import redis
+from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
 
 import requests
@@ -19,15 +21,111 @@ parent_env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=parent_env_path)
 
 
+# ============= REDIS CACHE SETUP =============
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_DB = int(os.getenv("REDIS_DB", 0))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
+CACHE_TTL = int(os.getenv("CACHE_TTL", 3600))  # 1 hour default
+
+# Initialize Redis client
+try:
+    redis_client = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        db=REDIS_DB,
+        password=REDIS_PASSWORD,
+        decode_responses=True,
+        socket_connect_timeout=2,  # Timeout if Redis is down
+        socket_timeout=5
+    )
+    # Test connection
+    redis_client.ping()
+    print(f"✅ Redis connected successfully at {REDIS_HOST}:{REDIS_PORT}")
+except Exception as e:
+    print(f"⚠️ Redis connection failed (caching disabled): {e}")
+    redis_client = None
+
+
+# ============= CACHE DECORATOR =============
+def cache_ai_response(ttl_seconds: int = CACHE_TTL):
+    """
+    Decorator to cache AI responses in Redis.
+    Skips caching if Redis is unavailable.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Skip cache if Redis is not available
+            if redis_client is None:
+                return func(*args, **kwargs)
+            
+            # Create cache key from function name and arguments
+            # Convert args/kwargs to a consistent string
+            key_parts = [func.__name__]
+            key_parts.extend([str(arg) for arg in args])
+            key_parts.extend([f"{k}:{v}" for k, v in sorted(kwargs.items())])
+            key_string = ":".join(key_parts)
+            
+            # Create MD5 hash for cache key
+            cache_key = f"ai_cache:{hashlib.md5(key_string.encode()).hexdigest()}"
+            
+            try:
+                # Try to get from cache
+                cached = redis_client.get(cache_key)
+                if cached:
+                    print(f"✅ CACHE HIT: {func.__name__} for {args[0] if args else 'unknown'}")
+                    return json.loads(cached)
+                
+                print(f"🔄 CACHE MISS: {func.__name__} - generating new response")
+                
+            except Exception as e:
+                print(f"⚠️ Redis error (proceeding without cache): {e}")
+                return func(*args, **kwargs)
+            
+            # Generate new response
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            generation_time = time.time() - start_time
+            print(f"⏱️ Generation took {generation_time:.2f}s")
+            
+            # Cache the result
+            try:
+                redis_client.setex(
+                    cache_key,
+                    ttl_seconds,
+                    json.dumps(result, ensure_ascii=False)
+                )
+                print(f"💾 Cached for {ttl_seconds}s")
+            except Exception as e:
+                print(f"⚠️ Failed to cache: {e}")
+            
+            return result
+        return wrapper
+    return decorator
+
+
 # ============= OLLAMA CONFIGURATION ============
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = "llama3"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 
 print(f"🦙 Using Ollama with model: {OLLAMA_MODEL}")
 print(f"   API URL: {OLLAMA_BASE_URL}")
 
 
 # ============= OLLAMA CLIENT ===================
+# Create session with connection pooling for better performance
+session = requests.Session()
+
+# Configure connection pooling
+adapter = requests.adapters.HTTPAdapter(
+    pool_connections=10,
+    pool_maxsize=20,
+    max_retries=3
+)
+session.mount('http://', adapter)
+session.mount('https://', adapter)
+
 def call_ollama(prompt: str,
                 system_prompt: str = None,
                 temperature: float = 0.2,
@@ -41,17 +139,22 @@ def call_ollama(prompt: str,
             "temperature": temperature,
             "num_predict": max_tokens,
             "top_p": 0.9,
-            "top_k": 40
+            "top_k": 40,
+            # Speed optimizations
+            "num_ctx": 2048,  # Smaller context window for faster processing
+            "num_batch": 512,  # Larger batch size
+            "f16_kv": True,    # Use half-precision for speed
         }
     }
 
     if system_prompt:
         payload["system"] = system_prompt
 
-    response = requests.post(
+    # Use session with connection pooling
+    response = session.post(
         f"{OLLAMA_BASE_URL}/api/generate",
         json=payload,
-        timeout=(10, 240)
+        timeout=(5, 120)  # Connect timeout 5s, read timeout 120s
     )
 
     response.raise_for_status()
@@ -99,8 +202,8 @@ def extract_json(text: str) -> Dict[str, Any]:
         end = text.rfind("}") + 1
         json_str = text[start:end]
         return json.loads(json_str)
-    except Exception:
-        raise ValueError("Failed to parse JSON from model output")
+    except Exception as e:
+        raise ValueError(f"Failed to parse JSON from model output: {e}")
 
 
 # ============= VALIDATION FUNCTIONS ============
@@ -167,6 +270,7 @@ def validate_structure(data: Dict[str, Any]):
 
 
 # ============= CHALLENGE GENERATION =============
+@cache_ai_response(ttl_seconds=3600)  # Cache for 1 hour
 def generate_challenge(topic: str,
                        difficulty: str,
                        sub_topic: str = None) -> Dict[str, Any]:
@@ -219,7 +323,7 @@ Return ONLY valid JSON in this format:
 
     for attempt in range(attempts):
         try:
-            print(f"🦙 Generating challenge ({attempt+1}/{attempts})...")
+            print(f"🦙 Generating MCQ challenge ({attempt+1}/{attempts})...")
 
             response_text = call_ollama(
                 prompt=user_prompt,
@@ -247,7 +351,7 @@ Return ONLY valid JSON in this format:
     return get_fallback_challenge(topic, difficulty)
 
 
-# ============= FALLBACK ========================
+# ============= FALLBACK MCQ ========================
 def get_fallback_challenge(topic: str,
                            difficulty: str) -> Dict[str, Any]:
     return {
@@ -266,7 +370,8 @@ def get_fallback_challenge(topic: str,
     }
 
 
-
+# ============= HINT GENERATION ========================
+@cache_ai_response(ttl_seconds=7200)  # Cache hints for 2 hours
 def generate_hint(question: str, options: list, correct_answer: int, 
                   explanation: str, difficulty: str, hint_level: int = 1) -> str:
     """
@@ -277,7 +382,7 @@ def generate_hint(question: str, options: list, correct_answer: int,
     hint_level_descriptions = {
         1: "a subtle hint that gently points in the right direction without revealing too much",
         2: "a more specific hint that narrows down the options and explains the key concept",
-        3: "a detailed hint that explains the approach and why certain options are wrong, but don't directly state which is correct"
+        3: "a detailed hint that explains the approach and why certain approaches are wrong, but don't directly state which is correct"
     }
     
     system_prompt = f"""
@@ -312,7 +417,7 @@ Requirements:
         hint = call_ollama(
             prompt=user_prompt,
             system_prompt=system_prompt,
-            temperature=0.3,  # Lower temperature for more focused hints
+            temperature=0.3,
             max_tokens=200
         )
         return hint.strip()
@@ -339,17 +444,32 @@ async def generate_challenge_async(topic: str, difficulty: str):
         )
 
 
-# ============= CACHING =========================
+# ============= CACHING (LRU fallback) =========================
 @lru_cache(maxsize=50)
 def generate_challenge_cached(topic: str, difficulty: str) -> str:
+    """Legacy LRU cache - kept for backward compatibility"""
     return json.dumps(generate_challenge(topic, difficulty))
 
 
 # ============= MAIN TEST ======================
 if __name__ == "__main__":
     print("=" * 80)
-    print("🦙 LLAMA3 CODING CHALLENGE GENERATOR (STRICT MODE)")
+    print("🦙 LLAMA3 CODING CHALLENGE GENERATOR WITH REDIS CACHE")
     print("=" * 80)
 
+    # Test MCQ generation
+    print("\n📝 Testing MCQ Generation:")
     challenge = generate_challenge("JavaScript Arrays", "medium")
     print(json.dumps(challenge, indent=2, ensure_ascii=False))
+    
+    # Test hint generation
+    print("\n💡 Testing Hint Generation:")
+    hint = generate_hint(
+        question=challenge["question"],
+        options=challenge["options"],
+        correct_answer=challenge["correct_answer_index"],
+        explanation=challenge["explanation"],
+        difficulty="medium",
+        hint_level=1
+    )
+    print(f"Hint: {hint}")
