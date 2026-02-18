@@ -5,6 +5,7 @@ import { Outlet, Link, Navigate } from "react-router-dom"
 import { useApi } from "../utils/api"
 import { ThemeToggle } from "../components/ThemeToggle"
 import { useTheme } from "../context/ThemeContext"
+import { StreakReminder } from "../components/StreakReminder"  // Change from "../challenge/StreakReminder"
 
 export function Layout(){
     const [quota, setQuota] = useState(null)
@@ -212,6 +213,20 @@ export function Layout(){
                                 Generate
                             </Link>
                             <Link 
+                                to="/daily" 
+                                style={styles.link}
+                                onMouseEnter={(e) => {
+                                    e.target.style.opacity = '1'
+                                    e.target.style.borderBottom = '2px solid white'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.opacity = '0.9'
+                                    e.target.style.borderBottom = '2px solid transparent'
+                                }}
+                            >
+                                📅 Daily
+                            </Link>
+                            <Link 
                                 to="/history" 
                                 style={styles.link}
                                 onMouseEnter={(e) => {
@@ -262,6 +277,7 @@ export function Layout(){
                 </SignedOut>
                 <SignedIn>
                     <Outlet />
+                    <StreakReminder /> {/* Add streak reminder that shows when daily not completed */}
                 </SignedIn>
             </main>
         </div>

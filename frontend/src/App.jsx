@@ -6,7 +6,8 @@ import { ChallengeGenerator } from "./challenge/ChallengeGenerator"
 import { HistoryPanel } from "./history/HistoryPanel"
 import { StatsDashboard } from "./stats/StatsDashboard"
 import { AuthenticationPage } from "./auth/AuthenticationPage"
-import { ChallengeDetails } from "./pages/ChallengeDetails" // Add this import
+import { ChallengeDetails } from "./pages/ChallengeDetails" 
+import { DailyChallenge } from "./challenge/DailyChallenge"
 import './styles/theme.css'
 import './App.css'
 
@@ -21,7 +22,8 @@ function App() {
             <Route path="/" element={<ChallengeGenerator />} />
             <Route path="/history" element={<HistoryPanel />} />
             <Route path="/stats" element={<StatsDashboard />} />
-            <Route path="/challenge/:id" element={<ChallengeDetails />} /> {/* Add this route */}
+            <Route path="/challenge/:id" element={<ChallengeDetails />} /> 
+            <Route path="/daily" element={<DailyChallenge />} />
           </Route>
         </Routes>
       </ClerkProviderWithRoutes>

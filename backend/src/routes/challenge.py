@@ -9,17 +9,18 @@ from ..database.db import (
     get_user_challenges
 )
 from ..utils import authenticate_and_get_user_details
-from ..database.models import get_db
+from ..database.models import get_db, Challenge, AnswerRecord, ChallengeBookmark, UserDailyChallenge, DailyChallenge
 from ..ai_generator import generate_challenge as ai_generate_challenge
-from ..ai_generator import get_fallback_challenge
+from ..ai_generator import get_fallback_challenge, generate_hint, generate_explanation
 import json
 import os
-from datetime import datetime, timedelta
-from typing import Optional, List
+from datetime import datetime, timedelta, date
+from typing import Optional, List, Dict, Any
 import logging
 import traceback
 
-from ..database.models import AnswerRecord
+from ..services.daily_challenge import DailyChallengeService
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -97,6 +98,25 @@ class BookmarkListResponse(BaseModel):
     """Response model for bookmarks list"""
     total: int
     bookmarks: List[dict]
+
+
+# ============= Daily Challenge Models =============
+
+class DailyChallengeStatusResponse(BaseModel):
+    daily_challenge: Dict[str, Any]
+    streak: int
+    can_attempt: bool
+    challenge: Optional[Dict[str, Any]] = None  # ADD THIS LINE - was missing!
+
+class DailyChallengeCompleteRequest(BaseModel):
+    daily_challenge_id: int
+    is_correct: bool
+
+class DailyChallengeCompleteResponse(BaseModel):
+    success: bool
+    message: str
+    streak_bonus: Optional[int] = None
+    new_streak: Optional[int] = None
 
 # ============= Challenge Endpoints =============
 
@@ -243,8 +263,6 @@ async def my_history(
         user_id = user_details.get("user_id")
         logger.info(f"Fetching history for user {user_id}")
 
-        from ..database.models import Challenge
-        
         # Build query
         query = db.query(Challenge).filter(Challenge.created_by == user_id)
         
@@ -367,7 +385,6 @@ async def get_challenge_by_id(
         user_details = authenticate_and_get_user_details(fastapi_request)
         user_id = user_details.get("user_id")
         
-        from ..database.models import Challenge
         challenge = db.query(Challenge).filter(
             Challenge.id == challenge_id,
             Challenge.created_by == user_id
@@ -415,8 +432,6 @@ async def validate_answer(
     try:
         user_details = authenticate_and_get_user_details(fastapi_request)
         user_id = user_details.get("user_id")
-        
-        from ..database.models import Challenge, AnswerRecord
         
         # Get the challenge
         challenge = db.query(Challenge).filter(
@@ -479,7 +494,6 @@ async def get_hint(
         user_id = user_details.get("user_id")
         
         # Get the challenge
-        from ..database.models import Challenge
         challenge = db.query(Challenge).filter(
             Challenge.id == challenge_id,
             Challenge.created_by == user_id
@@ -494,7 +508,6 @@ async def get_hint(
             raise HTTPException(status_code=429, detail="No quota remaining for hints")
         
         # Generate hint using AI
-        from ..ai_generator import generate_hint
         hint = generate_hint(
             question=challenge.question,
             options=json.loads(challenge.options),
@@ -532,7 +545,6 @@ async def get_share_link(
         user_id = user_details.get("user_id")
         
         # Verify the challenge exists and belongs to user
-        from ..database.models import Challenge
         challenge = db.query(Challenge).filter(
             Challenge.id == challenge_id,
             Challenge.created_by == user_id
@@ -574,8 +586,6 @@ async def toggle_bookmark(
         user_details = authenticate_and_get_user_details(fastapi_request)
         user_id = user_details.get("user_id")
         
-        from ..database.models import ChallengeBookmark
-        
         # Check if already bookmarked
         existing = db.query(ChallengeBookmark).filter(
             ChallengeBookmark.user_id == user_id,
@@ -614,8 +624,6 @@ async def get_bookmarks(
     try:
         user_details = authenticate_and_get_user_details(fastapi_request)
         user_id = user_details.get("user_id")
-        
-        from ..database.models import Challenge, ChallengeBookmark
         
         bookmarks = db.query(Challenge).join(
             ChallengeBookmark
@@ -662,7 +670,6 @@ async def explain_code(
         user_id = user_details.get("user_id")
         logger.info(f"User {user_id} requesting code explanation")
         
-        from ..ai_generator import generate_explanation
         explanation = generate_explanation(code, problem, language)
         
         return {
@@ -675,3 +682,144 @@ async def explain_code(
         logger.error(f"Error generating explanation: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error generating explanation: {str(e)}")
+    
+
+@router.get("/daily-challenge", response_model=DailyChallengeStatusResponse)
+async def get_daily_challenge(
+    fastapi_request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Get today's daily challenge status
+    """
+    try:
+        user_details = authenticate_and_get_user_details(fastapi_request)
+        user_id = user_details.get("user_id")
+        
+        # Get or create today's daily challenge
+        today = date.today()
+        daily = db.query(DailyChallenge).filter(
+            DailyChallenge.date == today
+        ).first()
+        
+        if not daily:
+            # Create a new daily challenge using your existing logic
+            from ..services.daily_challenge import DailyChallengeService
+            service = DailyChallengeService(db)
+            daily = service.get_or_create_today_challenge()
+        
+        # Get the challenge data directly
+        challenge = db.query(Challenge).get(daily.challenge_id)
+        
+        if not challenge:
+            raise HTTPException(status_code=404, detail="Challenge not found")
+        
+        # Format options
+        options = json.loads(challenge.options) if challenge.options else []
+        
+        # Check user completion
+        user_daily = db.query(UserDailyChallenge).filter(
+            UserDailyChallenge.user_id == user_id,
+            UserDailyChallenge.daily_challenge_id == daily.id
+        ).first()
+        
+        # Calculate streak (simplified for now)
+        streak = 0
+        
+        # Build response
+        response = {
+            "daily_challenge": {
+                "id": daily.id,
+                "challenge_id": daily.challenge_id,
+                "date": daily.date.isoformat(),
+                "completed": user_daily is not None and user_daily.completed,
+                "correct": user_daily.correct if user_daily else None,
+                "streak_bonus": user_daily.streak_bonus if user_daily else 0
+            },
+            "challenge": {
+                "id": challenge.id,
+                "title": challenge.title,
+                "question": challenge.question,
+                "options": options,
+                "explanation": challenge.explanation,
+                "difficulty": challenge.difficulty,
+                "topic": challenge.topic,
+                "time_complexity": challenge.time_complexity,
+                "space_complexity": challenge.space_complexity
+            },
+            "streak": streak,
+            "can_attempt": user_daily is None or not user_daily.completed
+        }
+        
+        logger.info(f"Daily challenge response keys: {list(response.keys())}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting daily challenge: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/daily-challenge/complete", response_model=DailyChallengeCompleteResponse)
+async def complete_daily_challenge(
+    request: DailyChallengeCompleteRequest,
+    fastapi_request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Complete today's daily challenge
+    """
+    try:
+        user_details = authenticate_and_get_user_details(fastapi_request)
+        user_id = user_details.get("user_id")
+        
+        service = DailyChallengeService(db)
+        result = service.complete_daily_challenge(
+            user_id=user_id,
+            daily_challenge_id=request.daily_challenge_id,
+            is_correct=request.is_correct
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error completing daily challenge: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/daily-challenge/history")
+async def get_daily_challenge_history(
+    fastapi_request: Request,
+    db: Session = Depends(get_db),
+    days: int = 30
+):
+    """
+    Get user's daily challenge history
+    """
+    try:
+        user_details = authenticate_and_get_user_details(fastapi_request)
+        user_id = user_details.get("user_id")
+        
+        cutoff = date.today() - timedelta(days=days)
+        
+        history = db.query(UserDailyChallenge).join(
+            DailyChallenge
+        ).filter(
+            UserDailyChallenge.user_id == user_id,
+            DailyChallenge.date >= cutoff
+        ).order_by(
+            DailyChallenge.date.desc()
+        ).all()
+        
+        return [
+            {
+                "date": udc.daily_challenge.date.isoformat(),
+                "completed": udc.completed,
+                "correct": udc.correct,
+                "streak_bonus": udc.streak_bonus
+            }
+            for udc in history
+        ]
+        
+    except Exception as e:
+        logger.error(f"Error fetching daily challenge history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

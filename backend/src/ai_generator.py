@@ -444,6 +444,56 @@ async def generate_challenge_async(topic: str, difficulty: str):
         )
 
 
+# ============= CODE EXPLANATION GENERATION =============
+
+def generate_explanation(code: str, problem: str = "", language: str = "python") -> Dict[str, Any]:
+    """
+    Generate an explanation for a piece of code
+    """
+    system_prompt = """
+You are an expert coding instructor. Explain the given code in a clear, educational way.
+Break down:
+1. What the code does
+2. How it works step by step
+3. Time and space complexity
+4. Any potential improvements
+Keep your explanation concise but thorough.
+"""
+
+    user_prompt = f"""
+Language: {language}
+Problem: {problem}
+
+Code: {code}
+
+Please explain this code in detail.
+"""
+
+    try:
+        explanation = call_ollama(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.3,
+            max_tokens=500
+        )
+
+        return {
+            "explanation": explanation.strip(),
+            "complexity": {
+                "time": "O(n)",  # Would be extracted from AI response in production
+                "space": "O(1)"
+            },
+            "generated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+    except Exception as e:
+        print(f"Error generating explanation: {e}")
+        return {
+            "explanation": "Failed to generate explanation. Please try again.",
+            "complexity": {},
+            "generated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+
 # ============= CACHING (LRU fallback) =========================
 @lru_cache(maxsize=50)
 def generate_challenge_cached(topic: str, difficulty: str) -> str:
