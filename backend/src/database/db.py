@@ -6,6 +6,7 @@ from typing import Optional, List
 
 
 
+
 def get_challenge_quota(db: Session, user_id: str):
     """Get user's challenge quota"""
     return (db.query(models.ChallengeQuota)
