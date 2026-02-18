@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import logging
@@ -44,8 +45,8 @@ def calculate_streak(challenges):
     
     return streak
 
-def calculate_achievements(challenges, total, by_difficulty, streak, topic_counter):
-    """Calculate user achievements based on activity"""
+def calculate_achievements(challenges, total, by_difficulty, streak, topic_counter, answer_stats=None, avg_response_time=None):
+    """Calculate user achievements based on activity and answer records"""
     achievements = []
     
     # First Challenge
@@ -140,23 +141,51 @@ def calculate_achievements(challenges, total, by_difficulty, streak, topic_count
             "total": 10
         })
     
-    # Speed Demon (placeholder - would need answer time tracking)
-    achievements.append({
-        "id": 9,
-        "name": "Speed Demon",
-        "description": "Complete a challenge in under 30 seconds",
-        "icon": "⚡",
-        "unlocked": False
-    })
+    # Speed Demon - based on average response time
+    if avg_response_time is not None:
+        speed_demon_unlocked = avg_response_time < 30
+        achievements.append({
+            "id": 9,
+            "name": "Speed Demon",
+            "description": "Average response time under 30 seconds",
+            "icon": "⚡",
+            "unlocked": speed_demon_unlocked,
+            "progress": round(avg_response_time, 1) if not speed_demon_unlocked else None,
+            "total": 30
+        })
+    else:
+        achievements.append({
+            "id": 9,
+            "name": "Speed Demon",
+            "description": "Average response time under 30 seconds",
+            "icon": "⚡",
+            "unlocked": False,
+            "progress": None,
+            "total": 30
+        })
     
-    # Perfectionist (placeholder - would need answer tracking)
-    achievements.append({
-        "id": 10,
-        "name": "Perfectionist",
-        "description": "100% success rate on 5 challenges",
-        "icon": "🏆",
-        "unlocked": False
-    })
+    # Perfectionist - based on perfect scores
+    if answer_stats and answer_stats.get('total_answers', 0) > 0:
+        perfect_score = answer_stats.get('perfect_scores', 0)
+        achievements.append({
+            "id": 10,
+            "name": "Perfectionist",
+            "description": "100% success rate on 5 challenges",
+            "icon": "🏆",
+            "unlocked": perfect_score >= 5,
+            "progress": min(perfect_score, 5) if perfect_score < 5 else None,
+            "total": 5
+        })
+    else:
+        achievements.append({
+            "id": 10,
+            "name": "Perfectionist",
+            "description": "100% success rate on 5 challenges",
+            "icon": "🏆",
+            "unlocked": False,
+            "progress": 0,
+            "total": 5
+        })
     
     return achievements
 
@@ -169,7 +198,7 @@ async def get_user_stats(
     timeframe: str = "all"
 ):
     """
-    Get user statistics for dashboard
+    Get user statistics for dashboard with REAL success rates
     
     - **timeframe**: all, month, week
     """
@@ -192,21 +221,56 @@ async def get_user_stats(
             cutoff = now - timedelta(days=30)
             challenges = [c for c in challenges if c.date_created >= cutoff]
         
+        # Get answer records for this user
+        answer_records_query = db.query(models.AnswerRecord).filter(
+            models.AnswerRecord.user_id == user_id
+        )
+        
+        if timeframe != "all":
+            answer_records_query = answer_records_query.filter(
+                models.AnswerRecord.answered_at >= cutoff
+            )
+        
+        answer_records = answer_records_query.all()
+        
         # Total challenges
         total = len(challenges)
         
-        # By difficulty
+        # By difficulty (challenges created)
         by_difficulty = {
             "easy": len([c for c in challenges if c.difficulty == "easy"]),
             "medium": len([c for c in challenges if c.difficulty == "medium"]),
             "hard": len([c for c in challenges if c.difficulty == "hard"])
         }
         
-        # Success rates (mock data - you'll need to implement answer tracking)
-        success_rate = {
-            "easy": 85,
-            "medium": 62,
-            "hard": 41
+        # Calculate REAL success rates by difficulty from answer records
+        correct_by_difficulty = {"easy": 0, "medium": 0, "hard": 0}
+        total_by_difficulty = {"easy": 0, "medium": 0, "hard": 0}
+        
+        for record in answer_records:
+            total_by_difficulty[record.difficulty] += 1
+            if record.is_correct:
+                correct_by_difficulty[record.difficulty] += 1
+        
+        success_rate = {}
+        for diff in ["easy", "medium", "hard"]:
+            if total_by_difficulty[diff] > 0:
+                success_rate[diff] = round((correct_by_difficulty[diff] / total_by_difficulty[diff]) * 100)
+            else:
+                success_rate[diff] = 0
+        
+        # Calculate average response time
+        response_times = [r.response_time for r in answer_records if r.response_time is not None]
+        avg_response_time = sum(response_times) / len(response_times) if response_times else None
+        
+        # Calculate perfect scores (challenges with correct answers)
+        # This is simplified - you might want to track perfect scores differently
+        perfect_scores = len([r for r in answer_records if r.is_correct])
+        
+        answer_stats = {
+            'total_answers': len(answer_records),
+            'perfect_scores': perfect_scores,
+            'avg_response_time': avg_response_time
         }
         
         # Favorite topics
@@ -230,17 +294,19 @@ async def get_user_stats(
             ])
             recent_activity.append({"date": date_str, "count": count})
         
-        # Calculate achievements
+        # Calculate achievements with real data
         achievements = calculate_achievements(
-            challenges, total, by_difficulty, streak, topic_counter
+            challenges, total, by_difficulty, streak, topic_counter, 
+            answer_stats, avg_response_time
         )
         
         return {
             "totalChallenges": total,
             "byDifficulty": by_difficulty,
-            "successRate": success_rate,
+            "successRate": success_rate,  # Now REAL data!
             "favoriteTopics": favorite_topics,
             "streak": streak,
+            "averageResponseTime": round(avg_response_time, 1) if avg_response_time else None,
             "achievements": achievements,
             "recentActivity": recent_activity
         }

@@ -41,6 +41,7 @@ export function StatsDashboard() {
         successRate: stats.successRate || { easy: 0, medium: 0, hard: 0 },
         favoriteTopics: stats.favoriteTopics || [],
         streak: streakInfo?.current_streak || stats.streak || 0,
+        averageResponseTime: stats.averageResponseTime, // Add this
         achievements: stats.achievements || [],
         recentActivity: stats.recentActivity || []
     } : null
@@ -696,6 +697,7 @@ export function StatsDashboard() {
         successRate: { easy: 0, medium: 0, hard: 0 },
         favoriteTopics: [],
         streak: 0,
+        averageResponseTime: null,
         achievements: [],
         recentActivity: []
     }
@@ -767,6 +769,15 @@ export function StatsDashboard() {
                     <span style={styles.statLabel}>Favorite Topic</span>
                 </div>
             </div>
+
+            {/* Optional: Display Average Response Time if available */}
+            {data.averageResponseTime && (
+                <div style={{ ...styles.statCard, marginBottom: '1.5rem', width: 'auto' }}>
+                    <span style={styles.statIcon}>⚡</span>
+                    <span style={styles.statValue}>{data.averageResponseTime}s</span>
+                    <span style={styles.statLabel}>Avg Response Time</span>
+                </div>
+            )}
 
             <div style={styles.chartSection}>
                 <h2 style={styles.sectionTitle}>

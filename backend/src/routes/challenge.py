@@ -19,6 +19,8 @@ from typing import Optional, List
 import logging
 import traceback
 
+from ..database.models import AnswerRecord
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +65,7 @@ class AnswerValidationRequest(BaseModel):
     """Request model for validating an answer"""
     challenge_id: int
     selected_answer_index: int
+    response_time: Optional[float] = None  # Time taken to answer in seconds
 
 class AnswerValidationResponse(BaseModel):
     """Response model for answer validation"""
@@ -407,13 +410,15 @@ async def validate_answer(
     db: Session = Depends(get_db)
 ):
     """
-    Validate a user's answer to a challenge
+    Validate a user's answer to a challenge and track the response
     """
     try:
         user_details = authenticate_and_get_user_details(fastapi_request)
         user_id = user_details.get("user_id")
         
-        from ..database.models import Challenge
+        from ..database.models import Challenge, AnswerRecord
+        
+        # Get the challenge
         challenge = db.query(Challenge).filter(
             Challenge.id == validation_request.challenge_id,
             Challenge.created_by == user_id
@@ -422,7 +427,25 @@ async def validate_answer(
         if not challenge:
             raise HTTPException(status_code=404, detail="Challenge not found")
         
+        # Check if answer is correct
         is_correct = (validation_request.selected_answer_index == challenge.correct_answer_id)
+        
+        # Get response time from request
+        response_time = validation_request.response_time
+        
+        # Save answer record
+        answer_record = AnswerRecord(
+            user_id=user_id,
+            challenge_id=challenge.id,
+            difficulty=challenge.difficulty,
+            is_correct=is_correct,
+            response_time=response_time,
+            answered_at=datetime.now()
+        )
+        db.add(answer_record)
+        db.commit()
+        
+        logger.info(f"Answer recorded for user {user_id}, challenge {challenge.id}, correct: {is_correct}")
         
         return AnswerValidationResponse(
             is_correct=is_correct,
@@ -437,7 +460,7 @@ async def validate_answer(
         logger.error(f"Error validating answer: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error validating answer: {str(e)}")
-
+        
 
 @router.post("/get-hint")
 async def get_hint(

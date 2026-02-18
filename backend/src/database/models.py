@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, create_engine, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, create_engine, ForeignKey, UniqueConstraint, Boolean, Float
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 
 engine = create_engine('sqlite:///database.db', echo=True)
@@ -41,6 +41,21 @@ class ChallengeBookmark(Base):
     __table_args__ = (
         UniqueConstraint('user_id', 'challenge_id', name='unique_user_challenge_bookmark'),
     )
+
+# Answer Record table for tracking responses
+class AnswerRecord(Base):
+    __tablename__ = 'answer_records'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    challenge_id = Column(Integer, ForeignKey('challenges.id'), nullable=False)
+    difficulty = Column(String, nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+    response_time = Column(Float, nullable=True)  # in seconds
+    answered_at = Column(DateTime, default=datetime.now)
+    
+    # Relationship
+    challenge = relationship("Challenge", foreign_keys=[challenge_id])
 
 Base.metadata.create_all(engine)
 
